@@ -4,6 +4,7 @@
  */
 
 console.log('Anti-Phishing Guardian: Content script loaded');
+console.log('[APG] Current URL:', window.location.href);
 
 let settings = {};
 let processedLinks = new Set();
@@ -12,36 +13,68 @@ let processedLinks = new Set();
 init();
 
 async function init() {
+  console.log('[APG] Initializing content script...');
+  
   // Get settings
-  const response = await chrome.runtime.sendMessage({ action: 'getSettings' });
-  if (response.success) {
-    settings = response.data;
+  try {
+    const response = await chrome.runtime.sendMessage({ action: 'getSettings' });
+    if (response && response.success) {
+      settings = response.data;
+      console.log('[APG] Settings loaded:', settings);
+    } else {
+      console.warn('[APG] Failed to load settings, using defaults');
+      settings = { enabled: true };
+    }
+  } catch (error) {
+    console.error('[APG] Error loading settings:', error);
+    settings = { enabled: true };
   }
 
-  // Start monitoring
-  if (settings.enabled) {
-    startMonitoring();
-  }
+  // Start monitoring - always start regardless of settings
+  console.log('[APG] Starting link monitoring...');
+  startMonitoring();
 }
 
 /**
  * Start monitoring for links
  */
 function startMonitoring() {
-  // Scan existing links
-  scanLinks();
+  console.log('[APG] startMonitoring called');
+  
+  // Wait for Gmail to load
+  const checkGmailLoaded = setInterval(() => {
+    const emailBody = document.querySelector('[role="main"]') || 
+                      document.querySelector('.nH') ||
+                      document.body;
+    
+    if (emailBody) {
+      console.log('[APG] Gmail interface detected, starting scan');
+      clearInterval(checkGmailLoaded);
+      
+      // Scan existing links
+      scanLinks();
 
-  // Watch for new links being added
-  const observer = new MutationObserver((mutations) => {
+      // Watch for new links being added
+      const observer = new MutationObserver((mutations) => {
+        console.log('[APG] DOM mutation detected, rescanning...');
+        scanLinks();
+      });
+
+      observer.observe(emailBody, {
+        childList: true,
+        subtree: true
+      });
+
+      console.log('[APG] Link monitoring started successfully');
+    }
+  }, 500);
+  
+  // Timeout after 10 seconds
+  setTimeout(() => {
+    clearInterval(checkGmailLoaded);
+    console.log('[APG] Gmail load timeout, starting anyway');
     scanLinks();
-  });
-
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
-
-  console.log('Link monitoring started');
+  }, 10000);
 }
 
 /**
@@ -49,6 +82,10 @@ function startMonitoring() {
  */
 function scanLinks() {
   const links = document.querySelectorAll('a[href]');
+  
+  console.log(`[APG] Scanning ${links.length} links on page`);
+  
+  let newLinksFound = 0;
   
   links.forEach(link => {
     const url = link.href;
@@ -58,11 +95,21 @@ function scanLinks() {
     
     // Skip mailto, tel, and internal links
     if (url.startsWith('mailto:') || url.startsWith('tel:') || url.startsWith('#')) {
+      console.log('[APG] Skipping non-http link:', url.substring(0, 50));
+      return;
+    }
+    
+    // Skip Google's internal links
+    if (url.includes('mail.google.com') && !url.includes('http')) {
+      console.log('[APG] Skipping Gmail internal link');
       return;
     }
 
     // Mark as processed
     processedLinks.add(url);
+    newLinksFound++;
+
+    console.log(`[APG] Processing link ${newLinksFound}:`, url.substring(0, 100));
 
     // CRITICAL: Block link immediately while analyzing
     preventClickDuringAnalysis(link);
@@ -70,6 +117,12 @@ function scanLinks() {
     // Analyze the link
     analyzeAndMarkLink(link, url);
   });
+  
+  if (newLinksFound > 0) {
+    console.log(`[APG] Found ${newLinksFound} new links to analyze`);
+  } else {
+    console.log('[APG] No new links found in this scan');
+  }
 }
 
 /**
@@ -167,6 +220,9 @@ async function analyzeAndMarkLink(linkElement, url) {
     // Get email context for spam analysis
     const emailContext = getEmailContext(linkElement);
     
+    console.log('[APG] Analyzing link:', url.substring(0, 100));
+    console.log('[APG] Context length:', emailContext.fullContext.length, 'chars');
+    
     // Send to background for analysis with context
     const response = await chrome.runtime.sendMessage({
       action: 'analyzeLink',
@@ -174,8 +230,10 @@ async function analyzeAndMarkLink(linkElement, url) {
       context: emailContext.fullContext
     });
 
-    if (response.success) {
+    if (response && response.success) {
       const analysis = response.data;
+      
+      console.log('[APG] Analysis result:', analysis.threatLevel, '- Issues:', analysis.issues.length);
       
       // Remove analyzing indicator
       removeAnalyzingIndicator(linkElement);
@@ -198,9 +256,45 @@ async function analyzeAndMarkLink(linkElement, url) {
       if (settings.blockDangerous && analysis.threatLevel === 'dangerous') {
         blockLink(linkElement, analysis);
       }
+    } else {
+      console.warn('[APG] No valid response from background script');
     }
   } catch (error) {
-    console.error('Error analyzing link:', error);
+    // CRITICAL: Handle "Extension context invalidated" error
+    if (error.message && error.message.includes('Extension context invalidated')) {
+      console.error('[APG] Extension was reloaded. Please REFRESH this page (F5) to reconnect.');
+      
+      // Show user-friendly message
+      if (!document.getElementById('apg-reload-notice')) {
+        const notice = document.createElement('div');
+        notice.id = 'apg-reload-notice';
+        notice.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: #ff9800;
+          color: white;
+          padding: 15px 20px;
+          border-radius: 8px;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+          z-index: 999999;
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+          max-width: 350px;
+        `;
+        notice.innerHTML = `
+          <strong>🛡️ Anti-Phishing Guardian</strong><br>
+          Extension was updated. Please refresh this page (F5) to activate protection.
+          <button style="margin-top:10px;padding:5px 10px;background:white;color:#ff9800;border:none;border-radius:4px;cursor:pointer;font-weight:bold;" onclick="location.reload()">Refresh Now</button>
+        `;
+        document.body.appendChild(notice);
+      }
+      
+      return; // Don't process further
+    }
+    
+    console.error('[APG] Error analyzing link:', error);
+    
     // Remove analyzing indicator even on error
     removeAnalyzingIndicator(linkElement);
     

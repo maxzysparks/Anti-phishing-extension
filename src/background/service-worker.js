@@ -18,13 +18,15 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     await StorageManager.saveSettings({});
     console.log('Default settings initialized');
     
-    // Initialize PhishTank database
+    // FIXED: Don't call updatePhishTankDatabase directly here
+    // scheduleAutomaticUpdates will handle it
     console.log('Initializing PhishTank threat intelligence...');
-    await ThreatIntelligence.updatePhishTankDatabase();
   }
   
-  // Schedule automatic daily updates
-  ThreatIntelligence.scheduleAutomaticUpdates();
+  // FIXED: Only schedule once on install, not on every update
+  if (details.reason === 'install') {
+    ThreatIntelligence.scheduleAutomaticUpdates();
+  }
 });
 
 // Rate limiting for message processing
@@ -409,8 +411,9 @@ async function handleClearCache(sendResponse) {
 chrome.runtime.onStartup.addListener(() => {
   console.log('Extension started');
   
-  // Ensure threat intelligence updates are scheduled
-  ThreatIntelligence.scheduleAutomaticUpdates();
+  // FIXED: Don't call scheduleAutomaticUpdates on every startup
+  // It's already scheduled and will persist via alarms
+  console.log('Service worker started, alarms will trigger updates as scheduled');
 });
 
 // SOLUTION: Keep service worker alive by responding to alarms
@@ -448,13 +451,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 // Initialize keep-alive on service worker activation
 setupKeepAlive();
 
-// Re-establish keep-alive on extension update
-chrome.runtime.onInstalled.addListener((details) => {
-  if (details.reason === 'update') {
-    console.log('[Service Worker] Extension updated, re-establishing keep-alive');
-    setupKeepAlive();
-  }
-});
+// FIXED: Remove duplicate onInstalled listener
+// Already handled above
 
 // Handle long-running connections from content scripts
 const connections = new Map();

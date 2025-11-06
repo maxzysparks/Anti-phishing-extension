@@ -1,6 +1,8 @@
 /**
  * Worker Manager
  * Manages Web Worker for PhishTank database lookups
+ * NOTE: Web Workers are NOT available in service workers (Manifest V3)
+ * This class provides fallback functionality using in-memory database
  */
 
 export class WorkerManager {
@@ -8,30 +10,23 @@ export class WorkerManager {
   static isReady = false;
   static pendingCallbacks = new Map();
   static callbackId = 0;
+  static inMemoryDatabase = [];
 
   /**
    * Initialize the worker
+   * FIXED: Web Workers don't work in service workers, use in-memory fallback
    */
   static async initialize() {
-    if (this.worker) {
+    if (this.isReady) {
       return; // Already initialized
     }
 
     try {
-      this.worker = new Worker(chrome.runtime.getURL('phishtank-worker.js'));
+      // CRITICAL FIX: Cannot use Web Workers in service workers (Manifest V3)
+      // Using in-memory database instead
+      console.log('[Worker] Using in-memory database (Web Workers not available in service workers)');
+      this.isReady = true;
       
-      // Setup message handler
-      this.worker.onmessage = (event) => this.handleMessage(event);
-      
-      this.worker.onerror = (error) => {
-        console.error('[Worker] Error:', error);
-        this.isReady = false;
-      };
-
-      // Wait for ready signal
-      await this.waitForReady();
-      
-      console.log('[Worker] Initialized successfully');
     } catch (error) {
       console.error('[Worker] Failed to initialize:', error);
       throw error;
@@ -40,170 +35,114 @@ export class WorkerManager {
 
   /**
    * Wait for worker to be ready
+   * FIXED: No actual worker, just mark as ready
    */
   static waitForReady() {
-    return new Promise((resolve) => {
-      const checkReady = (event) => {
-        if (event.data.action === 'ready') {
-          this.isReady = true;
-          resolve();
-        }
-      };
-      
-      if (this.worker) {
-        this.worker.addEventListener('message', checkReady, { once: true });
-      } else {
-        resolve(); // Fallback if no worker
-      }
-    });
+    return Promise.resolve();
   }
 
   /**
    * Load database into worker
+   * FIXED: Load into in-memory database instead
    */
   static async loadDatabase(urls) {
-    if (!this.worker || !this.isReady) {
+    if (!this.isReady) {
       await this.initialize();
     }
 
-    return new Promise((resolve, reject) => {
-      const id = this.callbackId++;
+    try {
+      // Store in memory
+      this.inMemoryDatabase = urls || [];
+      console.log(`[Worker] Database loaded in memory: ${this.inMemoryDatabase.length} threats`);
       
-      this.pendingCallbacks.set(id, { resolve, reject });
-      
-      this.worker.postMessage({
-        id: id,
-        action: 'loadDatabase',
-        data: { urls }
-      });
-
-      // Timeout after 30 seconds
-      setTimeout(() => {
-        if (this.pendingCallbacks.has(id)) {
-          this.pendingCallbacks.delete(id);
-          reject(new Error('Worker timeout'));
-        }
-      }, 30000);
-    });
+      return {
+        success: true,
+        count: this.inMemoryDatabase.length
+      };
+    } catch (error) {
+      console.error('[Worker] Failed to load database:', error);
+      throw error;
+    }
   }
 
   /**
    * Check URL using worker
+   * FIXED: Check using in-memory database
    */
   static async checkUrl(url) {
-    if (!this.worker || !this.isReady) {
-      // Fallback to non-worker check if worker not available
-      return { found: false, error: 'Worker not available' };
+    if (!this.isReady) {
+      await this.initialize();
     }
 
-    return new Promise((resolve) => {
-      const id = this.callbackId++;
+    try {
+      // Normalize URL for comparison
+      const normalizedUrl = url.toLowerCase().replace(/\/$/, '');
+      const urlObj = new URL(url);
+      const domain = urlObj.hostname;
       
-      this.pendingCallbacks.set(id, { resolve, reject: resolve });
+      // Check exact URL match or domain match
+      const match = this.inMemoryDatabase.find(entry => 
+        entry.url.toLowerCase() === normalizedUrl ||
+        entry.domain === domain
+      );
       
-      this.worker.postMessage({
-        id: id,
-        action: 'checkUrl',
-        data: { url }
-      });
-
-      // Timeout after 5 seconds
-      setTimeout(() => {
-        if (this.pendingCallbacks.has(id)) {
-          this.pendingCallbacks.delete(id);
-          resolve({ found: false, error: 'Timeout' });
-        }
-      }, 5000);
-    });
+      if (match) {
+        return {
+          found: true,
+          verified: match.verified,
+          timestamp: match.timestamp,
+          source: 'InMemory'
+        };
+      }
+      
+      return { found: false };
+    } catch (error) {
+      console.error('[Worker] Error checking URL:', error);
+      return { found: false, error: error.message };
+    }
   }
 
   /**
    * Check multiple URLs
+   * FIXED: Check using in-memory database
    */
   static async checkBatch(urls) {
-    if (!this.worker || !this.isReady) {
-      return urls.map(url => ({ url, result: { found: false } }));
+    if (!this.isReady) {
+      await this.initialize();
     }
 
-    return new Promise((resolve) => {
-      const id = this.callbackId++;
+    try {
+      const results = [];
       
-      this.pendingCallbacks.set(id, { resolve, reject: resolve });
+      for (const url of urls) {
+        const result = await this.checkUrl(url);
+        results.push({ url, result });
+      }
       
-      this.worker.postMessage({
-        id: id,
-        action: 'checkBatch',
-        data: { urls }
-      });
-
-      // Timeout after 10 seconds
-      setTimeout(() => {
-        if (this.pendingCallbacks.has(id)) {
-          this.pendingCallbacks.delete(id);
-          resolve(urls.map(url => ({ url, result: { found: false } })));
-        }
-      }, 10000);
-    });
+      return results;
+    } catch (error) {
+      console.error('[Worker] Error checking batch:', error);
+      return urls.map(url => ({ url, result: { found: false } }));
+    }
   }
 
   /**
    * Handle messages from worker
+   * FIXED: No longer needed as we don't use Web Workers
    */
   static handleMessage(event) {
-    const { id, action, data } = event.data;
-
-    // Handle database loaded
-    if (action === 'databaseLoaded') {
-      console.log(`[Worker] Database loaded: ${data.count} threats`);
-      if (this.pendingCallbacks.has(id)) {
-        const { resolve } = this.pendingCallbacks.get(id);
-        this.pendingCallbacks.delete(id);
-        resolve(data);
-      }
-      return;
-    }
-
-    // Handle check result
-    if (action === 'checkResult') {
-      if (this.pendingCallbacks.has(id)) {
-        const { resolve } = this.pendingCallbacks.get(id);
-        this.pendingCallbacks.delete(id);
-        resolve(data);
-      }
-      return;
-    }
-
-    // Handle batch results
-    if (action === 'batchResults') {
-      if (this.pendingCallbacks.has(id)) {
-        const { resolve } = this.pendingCallbacks.get(id);
-        this.pendingCallbacks.delete(id);
-        resolve(data);
-      }
-      return;
-    }
-
-    // Handle errors
-    if (action === 'error') {
-      console.error('[Worker] Error:', data);
-      if (this.pendingCallbacks.has(id)) {
-        const { reject } = this.pendingCallbacks.get(id);
-        this.pendingCallbacks.delete(id);
-        reject(new Error(data.message || 'Worker error'));
-      }
-    }
+    // Not used in in-memory implementation
+    console.log('[Worker] Message handling not needed for in-memory database');
   }
 
   /**
    * Terminate worker
+   * FIXED: Clear in-memory database
    */
   static terminate() {
-    if (this.worker) {
-      this.worker.terminate();
-      this.worker = null;
-      this.isReady = false;
-      this.pendingCallbacks.clear();
-      console.log('[Worker] Terminated');
-    }
+    this.inMemoryDatabase = [];
+    this.isReady = false;
+    this.pendingCallbacks.clear();
+    console.log('[Worker] In-memory database cleared');
   }
 }

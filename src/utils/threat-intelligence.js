@@ -46,7 +46,7 @@ export class ThreatIntelligence {
           
           // FALLBACK: Use a minimal hardcoded list of known phishing patterns
           // This allows the extension to work even without PhishTank access
-          const fallbackData = this.getFallbackPhishingData();
+          const fallbackData = await this.getFallbackPhishingData();
           
           return {
             success: true,
@@ -140,12 +140,9 @@ export class ThreatIntelligence {
           console.warn('[TI] Worker load failed, will use fallback:', workerError);
         }
         
-        // Notify user of successful update
-        await NotificationManager.showProtectionSummary({
-          linksScanned: 0,
-          threatsBlocked: 0,
-          message: `Threat database updated: ${phishingUrls.length} known threats`
-        });
+        // FIXED: Don't show notification on every update (causes repetitive notifications)
+        // Only log success
+        console.log('[TI] ✓ Threat database updated successfully:', phishingUrls.length, 'known threats');
         
         return {
           success: true,
@@ -375,23 +372,49 @@ export class ThreatIntelligence {
 
   /**
    * Schedule automatic daily updates
+   * FIXED: Prevent duplicate alarm listeners and multiple simultaneous updates
    */
   static scheduleAutomaticUpdates() {
-    // Update on extension install/startup
-    this.updatePhishTankDatabase();
+    // CRITICAL FIX: Check if already scheduled to prevent duplicates
+    if (this._updateScheduled) {
+      console.log('[TI] Updates already scheduled, skipping duplicate setup');
+      return;
+    }
+    
+    this._updateScheduled = true;
+    
+    // FIXED: Check if database exists first, then update if needed
+    this.getDatabaseStats().then(stats => {
+      if (!stats.exists) {
+        console.log('[TI] Database does not exist, initializing...');
+        this.updatePhishTankDatabase();
+      } else if (stats.needsUpdate) {
+        console.log('[TI] Database needs update (older than 24h)');
+        this.updatePhishTankDatabase();
+      } else {
+        console.log('[TI] Database is up to date (count:', stats.count, ', age:', stats.hoursOld, 'hours)');
+      }
+    }).catch(err => {
+      console.error('[TI] Error checking database stats, initializing anyway:', err);
+      this.updatePhishTankDatabase();
+    });
     
     // Set up daily updates (every 24 hours)
     chrome.alarms.create('updatePhishTank', {
       periodInMinutes: 1440 // 24 hours
     });
     
-    // Listen for alarm
-    chrome.alarms.onAlarm.addListener((alarm) => {
-      if (alarm.name === 'updatePhishTank') {
-        console.log('[TI] Automatic PhishTank update triggered');
-        this.updatePhishTankDatabase();
-      }
-    });
+    // FIXED: Only add listener once
+    if (!this._alarmListenerAdded) {
+      this._alarmListenerAdded = true;
+      
+      chrome.alarms.onAlarm.addListener((alarm) => {
+        if (alarm.name === 'updatePhishTank') {
+          console.log('[TI] Automatic PhishTank update triggered');
+          this.updatePhishTankDatabase();
+        }
+      });
+    }
   }
 
   /**
@@ -410,8 +433,9 @@ export class ThreatIntelligence {
   /**
    * Get fallback phishing data when PhishTank is unavailable
    * This provides basic protection using known phishing patterns
+   * FIXED: Made async and loads into WorkerManager
    */
-  static getFallbackPhishingData() {
+  static async getFallbackPhishingData() {
     // Minimal set of common phishing domains and patterns
     // This is a fallback when PhishTank API is blocked by CORS
     const fallbackUrls = [];
@@ -447,7 +471,7 @@ export class ThreatIntelligence {
     console.warn('[TI] PhishTank API blocks browser extensions due to CORS policy');
     
     // Store fallback data
-    chrome.storage.local.set({
+    await chrome.storage.local.set({
       phishTankDB: {
         urls: fallbackUrls,
         lastUpdated: timestamp,
@@ -455,6 +479,14 @@ export class ThreatIntelligence {
         source: 'fallback'
       }
     });
+    
+    // Load into WorkerManager
+    try {
+      await WorkerManager.loadDatabase(fallbackUrls);
+      console.log('[TI] Fallback database loaded into worker');
+    } catch (workerError) {
+      console.warn('[TI] Worker load failed for fallback:', workerError);
+    }
     
     return fallbackUrls;
   }
