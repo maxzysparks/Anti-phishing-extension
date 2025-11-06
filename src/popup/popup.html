@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anti-Phishing Guardian</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <img src="icons/icon48.png" alt="Shield" class="logo-icon">
+        <h1>Anti-Phishing Guardian</h1>
+      </div>
+      <div class="version">v1.0.0</div>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+      <button class="tab-btn" data-tab="lists">Lists</button>
+      <button class="tab-btn" data-tab="settings">Settings</button>
+    </nav>
+
+    <!-- Dashboard Tab -->
+    <div id="dashboard-tab" class="tab-content active">
+      <!-- Statistics Overview -->
+      <section class="stats-section">
+        <h2>Protection Overview</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="links-scanned">--</div>
+            <div class="stat-label">Links Scanned</div>
+          </div>
+          <div class="stat-card danger">
+            <div class="stat-value" id="threats-blocked">--</div>
+            <div class="stat-label">Threats Blocked</div>
+          </div>
+          <div class="stat-card success">
+            <div class="stat-value" id="protection-rate">--%</div>
+            <div class="stat-label">Protection Rate</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Threat Database Status -->
+      <section class="database-section">
+        <h2>Threat Database</h2>
+        <div class="database-info">
+          <div class="db-stat">
+            <span class="label">Known Threats:</span>
+            <span class="value" id="db-count">--</span>
+          </div>
+          <div class="db-stat">
+            <span class="label">Last Updated:</span>
+            <span class="value" id="db-updated">--</span>
+          </div>
+          <div class="db-stat">
+            <span class="label">Status:</span>
+            <span class="value status" id="db-status">
+              <span class="status-dot"></span>
+              <span id="db-status-text">Checking...</span>
+            </span>
+          </div>
+        </div>
+        <button id="update-db-btn" class="btn btn-primary">Update Database</button>
+      </section>
+
+      <!-- Quick Actions -->
+      <section class="actions-section">
+        <h2>Quick Actions</h2>
+        <div class="actions-grid">
+          <button id="export-data-btn" class="action-btn">
+            <span class="icon">📤</span>
+            <span>Export Data</span>
+          </button>
+          <button id="clear-cache-btn" class="action-btn">
+            <span class="icon">🗑️</span>
+            <span>Clear Cache</span>
+          </button>
+          <button id="view-reports-btn" class="action-btn">
+            <span class="icon">📊</span>
+            <span>View Reports</span>
+          </button>
+          <button id="health-check-btn" class="action-btn">
+            <span class="icon">🔧</span>
+            <span>System Check</span>
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Lists Tab -->
+    <div id="lists-tab" class="tab-content">
+      <section class="list-section">
+        <h2>Whitelist (Trusted Sites)</h2>
+        <div class="list-controls">
+          <input type="text" id="whitelist-input" placeholder="Enter domain (e.g., example.com)">
+          <button id="add-whitelist-btn" class="btn btn-success">Add</button>
+        </div>
+        <div id="whitelist-container" class="list-container">
+          <div class="loading">Loading...</div>
+        </div>
+      </section>
+
+      <section class="list-section">
+        <h2>Blacklist (Blocked Sites)</h2>
+        <div class="list-controls">
+          <input type="text" id="blacklist-input" placeholder="Enter domain (e.g., evil-site.com)">
+          <button id="add-blacklist-btn" class="btn btn-danger">Add</button>
+        </div>
+        <div id="blacklist-container" class="list-container">
+          <div class="loading">Loading...</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Settings Tab -->
+    <div id="settings-tab" class="tab-content">
+      <section class="settings-section">
+        <h2>Notification Settings</h2>
+        <label class="setting-item">
+          <input type="checkbox" id="notify-dangerous" checked>
+          <span>Notify on dangerous threats</span>
+        </label>
+        <label class="setting-item">
+          <input type="checkbox" id="notify-suspicious">
+          <span>Notify on suspicious links</span>
+        </label>
+        <label class="setting-item">
+          <input type="checkbox" id="notify-updates" checked>
+          <span>Notify on database updates</span>
+        </label>
+      </section>
+
+      <section class="settings-section">
+        <h2>Protection Level</h2>
+        <label class="setting-item">
+          <input type="radio" name="protection" value="strict" checked>
+          <span>Strict (Aggressive spam detection)</span>
+        </label>
+        <label class="setting-item">
+          <input type="radio" name="protection" value="balanced">
+          <span>Balanced (Recommended)</span>
+        </label>
+        <label class="setting-item">
+          <input type="radio" name="protection" value="permissive">
+          <span>Permissive (Allow more)</span>
+        </label>
+      </section>
+
+      <section class="settings-section">
+        <h2>Data Management</h2>
+        <button id="export-settings-btn" class="btn btn-secondary">Export Settings</button>
+        <button id="import-settings-btn" class="btn btn-secondary">Import Settings</button>
+        <input type="file" id="import-file-input" accept=".json" class="hidden" aria-label="Import settings file">
+        <button id="backup-cloud-btn" class="btn btn-secondary">Backup to Cloud</button>
+        <button id="restore-cloud-btn" class="btn btn-secondary">Restore from Cloud</button>
+        <button id="factory-reset-btn" class="btn btn-danger">Factory Reset</button>
+      </section>
+
+      <section class="settings-section">
+        <h2>About</h2>
+        <p class="about-text">
+          <strong>Anti-Phishing Guardian</strong><br>
+          Version 1.0.0<br>
+          Built with ❤️ for your security<br>
+          <a href="https://github.com/maxzysparks/Anti-phishing-extension" target="_blank" rel="noopener">GitHub</a>
+        </p>
+      </section>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
