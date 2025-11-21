@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ML Features Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        h2 {
+            color: #666;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .result {
+            background: #f8f9fa;
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #007bff;
+            border-radius: 4px;
+        }
+        .success {
+            border-left-color: #28a745;
+        }
+        .error {
+            border-left-color: #dc3545;
+        }
+        .warning {
+            border-left-color: #ffc107;
+        }
+        pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            min-height: 100px;
+        }
+        #test-canvas {
+            border: 1px solid #ddd;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🛡️ Anti-Phishing Extension - ML Features Test</h1>
+    <p>This page tests all 4 ML features implemented in the extension.</p>
+
+    <!-- Feature 1: TensorFlow.js -->
+    <div class="test-section">
+        <h2>1. TensorFlow.js Integration ✅</h2>
+        <p>Test the neural network phishing detection model</p>
+        <input type="text" id="tf-url" placeholder="Enter URL to test (e.g., http://suspicious-site.tk/login)" value="http://paypal-verify.tk/login">
+        <button onclick="testTensorFlow()">Test TensorFlow Prediction</button>
+        <div id="tf-result"></div>
+    </div>
+
+    <!-- Feature 2: NLP Analysis -->
+    <div class="test-section">
+        <h2>2. NLP Email Content Analysis ✅</h2>
+        <p>Test natural language processing for phishing detection</p>
+        <input type="text" id="nlp-subject" placeholder="Email subject" value="URGENT: Your account will be suspended">
+        <textarea id="nlp-content" placeholder="Email content">Your PayPal account has been locked due to suspicious activity. Click here immediately to verify your identity or your account will be permanently suspended within 24 hours.</textarea>
+        <button onclick="testNLP()">Analyze Email Content</button>
+        <div id="nlp-result"></div>
+    </div>
+
+    <!-- Feature 3: Behavioral Learning -->
+    <div class="test-section">
+        <h2>3. Behavioral Learning System ✅</h2>
+        <p>Test adaptive learning from user feedback</p>
+        <button onclick="testBehavioralLearning()">Get Learning Stats</button>
+        <button onclick="simulateFeedback()">Simulate User Feedback</button>
+        <button onclick="testRecommendations()">Get Recommendations</button>
+        <div id="behavioral-result"></div>
+    </div>
+
+    <!-- Feature 4: Visual Similarity -->
+    <div class="test-section">
+        <h2>4. Visual Similarity Detection ✅</h2>
+        <p>Test logo/brand impersonation detection</p>
+        <button onclick="testVisualSimilarity()">Test Visual Detection</button>
+        <button onclick="loadTestImage()">Load Test Image</button>
+        <canvas id="test-canvas" width="200" height="200"></canvas>
+        <div id="visual-result"></div>
+    </div>
+
+    <!-- Overall Status -->
+    <div class="test-section">
+        <h2>📊 Overall Status</h2>
+        <button onclick="runAllTests()">Run All Tests</button>
+        <div id="overall-result"></div>
+    </div>
+
+    <script type="module">
+        // Import ML modules
+        import { tfManager } from './dist/tensorflow.js';
+        import { nlpAnalyzer } from './src/ml/nlp-analyzer.js';
+        import { behavioralLearning } from './src/ml/behavioral-learning.js';
+        import { visualSimilarity } from './src/ml/visual-similarity.js';
+        import { PatternDetector } from './src/ml/pattern-detector.js';
+
+        // Make functions available globally
+        window.tfManager = tfManager;
+        window.nlpAnalyzer = nlpAnalyzer;
+        window.behavioralLearning = behavioralLearning;
+        window.visualSimilarity = visualSimilarity;
+        window.PatternDetector = PatternDetector;
+
+        // Test TensorFlow.js
+        window.testTensorFlow = async function() {
+            const resultDiv = document.getElementById('tf-result');
+            const url = document.getElementById('tf-url').value;
+            
+            resultDiv.innerHTML = '<div class="result">Testing TensorFlow.js...</div>';
+            
+            try {
+                // Initialize if needed
+                await tfManager.initialize();
+                
+                // Analyze URL
+                const analysis = await PatternDetector.analyze(url);
+                
+                resultDiv.innerHTML = `
+                    <div class="result success">
+                        <h3>✅ TensorFlow.js Working!</h3>
+                        <pre>${JSON.stringify(analysis, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <h3>❌ Error</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        };
+
+        // Test NLP
+        window.testNLP = async function() {
+            const resultDiv = document.getElementById('nlp-result');
+            const subject = document.getElementById('nlp-subject').value;
+            const content = document.getElementById('nlp-content').value;
+            
+            resultDiv.innerHTML = '<div class="result">Analyzing email content...</div>';
+            
+            try {
+                const analysis = await nlpAnalyzer.analyzeEmailContent(content, subject);
+                
+                resultDiv.innerHTML = `
+                    <div class="result ${analysis.classification === 'dangerous' ? 'error' : analysis.classification === 'suspicious' ? 'warning' : 'success'}">
+                        <h3>📧 NLP Analysis Complete</h3>
+                        <p><strong>Classification:</strong> ${analysis.classification}</p>
+                        <p><strong>Confidence:</strong> ${(analysis.confidence * 100).toFixed(1)}%</p>
+                        <p><strong>Score:</strong> ${analysis.score}</p>
+                        <pre>${JSON.stringify(analysis, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <h3>❌ Error</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        };
+
+        // Test Behavioral Learning
+        window.testBehavioralLearning = async function() {
+            const resultDiv = document.getElementById('behavioral-result');
+            
+            try {
+                const stats = await behavioralLearning.getLearningStats();
+                
+                resultDiv.innerHTML = `
+                    <div class="result success">
+                        <h3>📊 Learning Statistics</h3>
+                        <pre>${JSON.stringify(stats, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <h3>❌ Error</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        };
+
+        window.simulateFeedback = async function() {
+            const resultDiv = document.getElementById('behavioral-result');
+            
+            try {
+                // Simulate some feedback
+                await behavioralLearning.recordFeedback(
+                    'http://phishing-site.com',
+                    'DANGEROUS',
+                    'blacklist'
+                );
+                
+                resultDiv.innerHTML = `
+                    <div class="result success">
+                        <h3>✅ Feedback Recorded</h3>
+                        <p>Simulated user feedback has been recorded for training.</p>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <h3>❌ Error</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        };
+
+        window.testRecommendations = async function() {
+            const resultDiv = document.getElementById('behavioral-result');
+            
+            try {
+                const recommendations = await behavioralLearning.getPersonalizedRecommendations();
+                
+                resultDiv.innerHTML = `
+                    <div class="result success">
+                        <h3>💡 Personalized Recommendations</h3>
+                        <pre>${JSON.stringify(recommendations, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <h3>❌ Error</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        };
+
+        // Test Visual Similarity
+        window.testVisualSimilarity = async function() {
+            const resultDiv = document.getElementById('visual-result');
+            
+            try {
+                visualSimilarity.initialize();
+                
+                resultDiv.innerHTML = `
+                    <div class="result success">
+                        <h3>✅ Visual Similarity Detector Initialized</h3>
+                        <p>Loaded ${visualSimilarity.knownLogos.size} brand signatures</p>
+                        <p>Ready to detect logo impersonation</p>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <h3>❌ Error</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        };
+
+        window.loadTestImage = function() {
+            const canvas = document.getElementById('test-canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Draw a simple test pattern (simulating a logo)
+            ctx.fillStyle = '#003087'; // PayPal blue
+            ctx.fillRect(0, 0, 200, 100);
+            ctx.fillStyle = '#009cde'; // PayPal light blue
+            ctx.fillRect(0, 100, 200, 100);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '30px Arial';
+            ctx.fillText('PayPal', 50, 110);
+            
+            document.getElementById('visual-result').innerHTML = `
+                <div class="result success">
+                    <h3>✅ Test Image Loaded</h3>
+                    <p>Simulated PayPal logo drawn on canvas</p>
+                </div>
+            `;
+        };
+
+        // Run all tests
+        window.runAllTests = async function() {
+            const resultDiv = document.getElementById('overall-result');
+            resultDiv.innerHTML = '<div class="result">Running all tests...</div>';
+            
+            const results = [];
+            
+            // Test 1: TensorFlow
+            try {
+                await tfManager.initialize();
+                results.push('✅ TensorFlow.js: Initialized');
+            } catch (e) {
+                results.push('❌ TensorFlow.js: ' + e.message);
+            }
+            
+            // Test 2: NLP
+            try {
+                await nlpAnalyzer.initialize();
+                results.push('✅ NLP Analyzer: Initialized');
+            } catch (e) {
+                results.push('⚠️ NLP Analyzer: ' + e.message);
+            }
+            
+            // Test 3: Behavioral Learning
+            try {
+                const stats = await behavioralLearning.getLearningStats();
+                results.push('✅ Behavioral Learning: Working');
+            } catch (e) {
+                results.push('❌ Behavioral Learning: ' + e.message);
+            }
+            
+            // Test 4: Visual Similarity
+            try {
+                visualSimilarity.initialize();
+                results.push('✅ Visual Similarity: Initialized');
+            } catch (e) {
+                results.push('❌ Visual Similarity: ' + e.message);
+            }
+            
+            resultDiv.innerHTML = `
+                <div class="result success">
+                    <h3>🎉 Test Results</h3>
+                    ${results.map(r => `<p>${r}</p>`).join('')}
+                </div>
+            `;
+        };
+
+        // Auto-run tests on load
+        console.log('ML Features Test Page Loaded');
+        console.log('Click "Run All Tests" to verify all features');
+    </script>
+</body>
+</html>

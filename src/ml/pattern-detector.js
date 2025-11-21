@@ -3,6 +3,8 @@
  * Uses heuristic scoring and pattern recognition (no external ML library needed)
  */
 
+import { tfManager } from './tensorflow-manager.js';
+
 export class PatternDetector {
   /**
    * Extract features from URL for ML-style analysis
@@ -232,9 +234,9 @@ export class PatternDetector {
   }
 
   /**
-   * Full ML-style analysis
+   * Full ML-style analysis with TensorFlow.js integration
    */
-  static analyze(url) {
+  static async analyze(url) {
     // Extract features
     const features = this.extractFeatures(url);
     if (!features) {
@@ -258,7 +260,7 @@ export class PatternDetector {
     // Classification
     const classification = this.classify(totalScore);
     
-    return {
+    const result = {
       score: totalScore,
       baseScore: baseScore,
       patternScore: patternMatch.score,
@@ -275,6 +277,29 @@ export class PatternDetector {
         suspiciousKeywords: features.suspiciousKeywords
       }
     };
+
+    // Add TensorFlow.js prediction if available
+    try {
+      const tfPrediction = await tfManager.predict(result);
+      result.tfPrediction = tfPrediction;
+      result.mlEnhanced = true;
+      
+      // Combine TF prediction with heuristic score
+      if (tfPrediction.confidence > 0.7) {
+        result.finalClassification = tfPrediction.prediction;
+        result.finalConfidence = tfPrediction.confidence;
+      } else {
+        result.finalClassification = classification.classification;
+        result.finalConfidence = classification.confidence;
+      }
+    } catch (error) {
+      console.log('[ML] TensorFlow prediction not available:', error.message);
+      result.mlEnhanced = false;
+      result.finalClassification = classification.classification;
+      result.finalConfidence = classification.confidence;
+    }
+    
+    return result;
   }
 
   /**

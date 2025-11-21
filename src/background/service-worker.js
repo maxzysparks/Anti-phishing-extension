@@ -1,6 +1,7 @@
 import { PhishingDetector } from '../utils/phishing-detector.js';
 import { StorageManager } from '../utils/storage.js';
 import { ThreatIntelligence } from '../utils/threat-intelligence.js';
+import { tfManager } from '../ml/tensorflow-manager.js';
 
 /**
  * Background service worker for the anti-phishing extension
@@ -8,6 +9,29 @@ import { ThreatIntelligence } from '../utils/threat-intelligence.js';
  */
 
 console.log('Anti-Phishing Guardian: Background service worker loaded');
+
+// Initialize TensorFlow.js on startup
+(async () => {
+  try {
+    console.log('[ML] Initializing TensorFlow.js...');
+    const initResult = await tfManager.initialize();
+    if (initResult.success) {
+      console.log('[ML] TensorFlow.js initialized:', initResult.message);
+      
+      // Try to load saved model
+      const loadResult = await tfManager.loadModel();
+      if (loadResult.success) {
+        console.log('[ML] Pre-trained model loaded successfully');
+      } else {
+        console.log('[ML] No pre-trained model found, will create new model on first use');
+      }
+    } else {
+      console.error('[ML] TensorFlow.js initialization failed:', initResult.error);
+    }
+  } catch (error) {
+    console.error('[ML] Error during ML initialization:', error);
+  }
+})();
 
 // Initialize default settings on install
 chrome.runtime.onInstalled.addListener(async (details) => {
