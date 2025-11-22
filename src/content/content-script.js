@@ -223,12 +223,39 @@ async function analyzeAndMarkLink(linkElement, url) {
     console.log('[APG] Analyzing link:', url.substring(0, 100));
     console.log('[APG] Context length:', emailContext.fullContext.length, 'chars');
     
-    // Send to background for analysis with context
-    const response = await chrome.runtime.sendMessage({
-      action: 'analyzeLink',
-      url: url,
-      context: emailContext.fullContext
-    });
+    // Send to background for analysis with context - WITH RETRY LOGIC
+    let response = null;
+    let retries = 3;
+    let lastError = null;
+    
+    while (retries > 0 && !response) {
+      try {
+        response = await chrome.runtime.sendMessage({
+          action: 'analyzeLink',
+          url: url,
+          context: emailContext.fullContext
+        });
+        
+        // If we got a response, break the loop
+        if (response) break;
+        
+      } catch (sendError) {
+        lastError = sendError;
+        console.warn(`[APG] Send attempt failed (${4 - retries}/3):`, sendError.message);
+        
+        // Wait before retry (exponential backoff)
+        if (retries > 1) {
+          await new Promise(resolve => setTimeout(resolve, 500 * (4 - retries)));
+        }
+        
+        retries--;
+      }
+    }
+    
+    // If all retries failed, throw the last error
+    if (!response && lastError) {
+      throw lastError;
+    }
 
     if (response && response.success) {
       const analysis = response.data;
