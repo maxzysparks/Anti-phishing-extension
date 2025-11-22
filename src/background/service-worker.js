@@ -524,15 +524,11 @@ function decrementActiveOperations() {
   console.log('[Service Worker] Active operations:', activeOperations);
 }
 
-// Wrap critical handlers to track active operations
-const originalHandleAnalyzeLink = handleAnalyzeLink;
-handleAnalyzeLink = async function(url, context, sendResponse) {
-  incrementActiveOperations();
-  try {
-    await originalHandleAnalyzeLink(url, context, sendResponse);
-  } finally {
-    decrementActiveOperations();
+// Monitor active operations for debugging
+setInterval(() => {
+  if (activeOperations > 0) {
+    console.log('[Service Worker] Currently active operations:', activeOperations);
   }
-};
+}, 30000); // Log every 30 seconds if there are active operations
 
-console.log('[Service Worker] Keep-alive mechanisms initialized');
+console.log('[Service Worker] Initialization complete - Ready to process requests');
