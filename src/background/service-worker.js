@@ -10,28 +10,45 @@ import { tfManager } from '../ml/tensorflow-manager.js';
 
 console.log('Anti-Phishing Guardian: Background service worker loaded');
 
-// Initialize TensorFlow.js on startup
-(async () => {
+// Initialize TensorFlow.js on startup (with error recovery)
+// CRITICAL FIX: Wrap in try-catch and don't let TF errors crash service worker
+let tfInitialized = false;
+
+async function initializeTensorFlow() {
+  if (tfInitialized) return;
+  
   try {
     console.log('[ML] Initializing TensorFlow.js...');
     const initResult = await tfManager.initialize();
     if (initResult.success) {
       console.log('[ML] TensorFlow.js initialized:', initResult.message);
+      tfInitialized = true;
       
-      // Try to load saved model
-      const loadResult = await tfManager.loadModel();
-      if (loadResult.success) {
-        console.log('[ML] Pre-trained model loaded successfully');
-      } else {
-        console.log('[ML] No pre-trained model found, will create new model on first use');
-      }
+      // Try to load saved model (non-blocking)
+      tfManager.loadModel().then(loadResult => {
+        if (loadResult.success) {
+          console.log('[ML] Pre-trained model loaded successfully');
+        } else {
+          console.log('[ML] No pre-trained model found, will create new model on first use');
+        }
+      }).catch(err => {
+        console.warn('[ML] Model loading failed (non-critical):', err.message);
+      });
     } else {
-      console.error('[ML] TensorFlow.js initialization failed:', initResult.error);
+      console.warn('[ML] TensorFlow.js initialization failed (non-critical):', initResult.error);
     }
   } catch (error) {
-    console.error('[ML] Error during ML initialization:', error);
+    console.warn('[ML] TensorFlow initialization error (non-critical):', error.message);
+    // Don't let TF errors crash the service worker
   }
-})();
+}
+
+// Initialize TF in background (non-blocking)
+setTimeout(() => {
+  initializeTensorFlow().catch(err => {
+    console.warn('[ML] Deferred TF init failed (non-critical):', err.message);
+  });
+}, 1000); // Delay 1 second to let service worker stabilize
 
 // Initialize default settings on install
 chrome.runtime.onInstalled.addListener(async (details) => {
