@@ -87,6 +87,7 @@ body::after {
 /* Header with Neon Glow */
 .header {
   background: linear-gradient(135deg, rgba(0, 243, 255, 0.1) 0%, rgba(157, 0, 255, 0.1) 100%);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border-bottom: 2px solid var(--neon-cyan);
   box-shadow: 
@@ -171,6 +172,7 @@ body::after {
 .tabs {
   display: flex;
   background: rgba(10, 14, 39, 0.8);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid rgba(0, 243, 255, 0.3);
   position: relative;
@@ -294,6 +296,7 @@ section h2::before {
 
 .stat-card {
   background: var(--card-bg);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   padding: 18px;
   border-radius: 12px;
@@ -382,6 +385,7 @@ section h2::before {
 /* Database Section with Neon Glow */
 .database-info {
   background: var(--card-bg);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   padding: 18px;
   border-radius: 12px;
@@ -475,6 +479,7 @@ section h2::before {
   gap: 10px;
   padding: 18px;
   background: var(--card-bg);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 2px solid rgba(0, 243, 255, 0.3);
   border-radius: 12px;
@@ -644,6 +649,7 @@ section h2::before {
   border-radius: 8px;
   font-size: 14px;
   background: var(--card-bg);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   color: #fff;
   transition: all 0.3s ease;
@@ -662,6 +668,7 @@ section h2::before {
 
 .list-container {
   background: var(--card-bg);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border-radius: 12px;
   padding: 14px;
@@ -757,6 +764,7 @@ section h2::before {
   align-items: center;
   padding: 14px;
   background: var(--card-bg);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border: 2px solid rgba(0, 243, 255, 0.2);
   border-radius: 8px;
@@ -835,6 +843,7 @@ section h2::before {
 
 .toast {
   background: var(--card-bg);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   padding: 14px 18px;
   border-radius: 8px;
