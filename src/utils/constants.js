@@ -64,14 +64,15 @@ export const PHISHING_KEYWORDS = [
 ];
 
 // SPAM-specific indicators (very high weight)
+// FIXED: Removed legitimate marketing terms like 'unsubscribe' to reduce false positives
 export const SPAM_INDICATORS = [
-  'viagra', 'cialis', 'pharmacy', 'pills', 'medication', 'weight loss',
-  'work from home', 'make money', 'earn $', 'get paid', 'income opportunity',
-  'mlm', 'multi-level', 'investment opportunity', 'crypto gains',
-  'bitcoin', 'forex', 'trading bot', 'guaranteed profit',
-  'enlarge', 'enhancement', 'replica', 'luxury goods',
-  'nigerian prince', 'beneficiary', 'next of kin', 'offshore',
-  'unsubscribe', 'opt-out', 'remove me', 'mailing list'
+  'viagra', 'cialis', 'pharmacy online', 'cheap pills', 'medication online',
+  'work from home', 'make money fast', 'earn $$$', 'get paid to', 'income opportunity',
+  'mlm', 'multi-level marketing', 'investment opportunity', 'crypto gains',
+  'forex trading', 'trading bot', 'guaranteed profit', 'risk-free investment',
+  'enlarge', 'enhancement pills', 'replica watches', 'luxury replica',
+  'nigerian prince', 'beneficiary', 'next of kin', 'offshore account',
+  'wire transfer', 'western union', 'money gram', 'cashiers check'
 ];
 
 // Suspicious TLDs
@@ -100,7 +101,37 @@ export const LEGITIMATE_DOMAINS = [
   // Social Media
   'instagram.com', 'tiktok.com', 'snapchat.com', 'reddit.com',
   // Email Services
-  'yahoo.com', 'protonmail.com', 'zoho.com', 'aol.com'
+  'yahoo.com', 'protonmail.com', 'zoho.com', 'aol.com',
+  // Book & Media Services
+  'bookbub.com', 'goodreads.com', 'audible.com', 'scribd.com',
+  'kobo.com', 'barnesandnoble.com', 'bn.com',
+  // Newsletter & Marketing Services (legitimate tracking domains)
+  'mailchimp.com', 'constantcontact.com', 'sendgrid.net', 'aweber.com',
+  'getresponse.com', 'activecampaign.com', 'convertkit.com',
+  'substack.com', 'beehiiv.com', 'buttondown.email'
+];
+
+// Legitimate tracking/redirect domains (used by legitimate services)
+export const LEGITIMATE_TRACKING_DOMAINS = [
+  'outbound.bookbub.com', 'click.e.bookbub.com', 'links.bookbub.com',
+  'click.amazon.com', 'amzn.to', 'amazon.com/gp',
+  'click.e.netflix.com', 'click.e.spotify.com',
+  'click.e.linkedin.com', 'click.e.twitter.com',
+  'mandrillapp.com', 'sendgrid.net', 'mailgun.org',
+  // Social Media Redirect Domains (Facebook, Twitter, Instagram, etc.)
+  'l.facebook.com', 'lm.facebook.com', 'l.instagram.com', 'l.messenger.com',
+  't.co', 'twitter.com/i/redirect', 'l.twitter.com',
+  'youtube.com/redirect', 'youtu.be',
+  // Bank & Financial Institution Redirects
+  'links.chase.com', 'secure.chase.com', 'click.chase.com',
+  'links.bankofamerica.com', 'secure.bankofamerica.com',
+  'links.wellsfargo.com', 'secure.wellsfargo.com',
+  'links.citi.com', 'online.citi.com', 'secure.citi.com',
+  'links.capitalone.com', 'secure.capitalone.com',
+  'links.usbank.com', 'secure.usbank.com',
+  // Generic patterns for legitimate services
+  'email.mg.', 'email.', 'link.', 'links.', 'click.', 'go.', 'track.',
+  'secure.', 'online.', 'redirect.', 'r.', 'url.'
 ];
 
 // Comprehensive list of popular domains to protect against typosquatting

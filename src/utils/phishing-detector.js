@@ -5,7 +5,7 @@ import { AnalyticsManager } from './analytics.js';
 import { ThreatIntelligence } from './threat-intelligence.js';
 import { SSLValidator } from './ssl-validator.js';
 import { PatternDetector } from '../ml/pattern-detector.js';
-import { THREAT_LEVELS, PHISHING_KEYWORDS, SPAM_INDICATORS } from './constants.js';
+import { THREAT_LEVELS, PHISHING_KEYWORDS, SPAM_INDICATORS, LEGITIMATE_DOMAINS, LEGITIMATE_TRACKING_DOMAINS } from './constants.js';
 
 /**
  * Main phishing detection engine
@@ -41,13 +41,16 @@ export class PhishingDetector {
       const urlObj = new URL(url);
       const domain = urlObj.hostname;
       
-      if (await StorageManager.isWhitelisted(domain)) {
+      // ENHANCED: Check if domain is in legitimate domains list
+      const isLegitimate = this.isLegitimateService(domain);
+      
+      if (isLegitimate || await StorageManager.isWhitelisted(domain)) {
         // SECURITY: Verify domain still resolves and has valid certificate
         const isStillSafe = await this.verifyWhitelistedDomain(domain);
         
-        if (!isStillSafe) {
+        if (!isStillSafe && !isLegitimate) {
           console.warn('[APG] Whitelisted domain failed verification:', domain);
-          // Remove from whitelist
+          // Remove from whitelist (but not if it's in legitimate list)
           await StorageManager.removeFromWhitelist(domain);
           // Continue to full analysis
         } else {
@@ -57,6 +60,7 @@ export class PhishingDetector {
             threatLevel: THREAT_LEVELS.SAFE,
             issues: [],
             isWhitelisted: true,
+            isLegitimate: isLegitimate,
             timestamp: Date.now(),
             verified: true
           };
@@ -185,14 +189,15 @@ export class PhishingDetector {
       if (analysis.threatLevel === THREAT_LEVELS.DANGEROUS) {
         await StorageManager.incrementBlocked();
         
-        // Show notification for dangerous threats
+        // Show notification for dangerous threats (with deduplication)
         await NotificationManager.showThreatBlocked(
           url, 
           analysis.threatLevel, 
           analysis.issues.length
         );
-      } else if (analysis.threatLevel === THREAT_LEVELS.SUSPICIOUS && contextScore >= 5) {
-        // Show notification for high-scoring suspicious links
+      } else if (analysis.threatLevel === THREAT_LEVELS.SUSPICIOUS && contextScore >= 12) {
+        // FIXED: Only show notification for extremely high-scoring suspicious links (raised threshold from 7 to 12)
+        // This means 4+ SPAM indicators must be present before notifying on suspicious links
         await NotificationManager.showThreatBlocked(
           url, 
           analysis.threatLevel, 
@@ -256,20 +261,70 @@ export class PhishingDetector {
   }
 
   /**
+   * Check if domain is a known legitimate service
+   */
+  static isLegitimateService(domain) {
+    if (!domain) return false;
+    
+    const lowerDomain = domain.toLowerCase();
+    
+    // Check exact match in legitimate domains
+    if (LEGITIMATE_DOMAINS.includes(lowerDomain)) {
+      return true;
+    }
+    
+    // Check if it's a subdomain of a legitimate domain
+    for (const legitDomain of LEGITIMATE_DOMAINS) {
+      if (lowerDomain.endsWith('.' + legitDomain) || lowerDomain === legitDomain) {
+        return true;
+      }
+    }
+    
+    // Check legitimate tracking domains (partial matches)
+    for (const trackingPattern of LEGITIMATE_TRACKING_DOMAINS) {
+      if (trackingPattern.endsWith('.')) {
+        // Pattern like "email." - check if domain starts with it
+        if (lowerDomain.startsWith(trackingPattern)) {
+          return true;
+        }
+      } else if (lowerDomain === trackingPattern || lowerDomain.endsWith('.' + trackingPattern)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  /**
    * Analyze surrounding text for phishing keywords
-   * ENHANCED: More aggressive scoring for spam
+   * ENHANCED: Smarter scoring that considers legitimate marketing
    */
   static analyzeContext(text) {
     if (!text) return 0;
     
     const lowerText = text.toLowerCase();
-    let score = 0;
+    let phishingScore = 0;
     let spamScore = 0;
+    let legitimateMarketingIndicators = 0;
 
-    // Check for phishing keywords (weight: 1)
+    // Check for legitimate marketing indicators (reduces false positives)
+    const legitMarketingWords = [
+      'unsubscribe', 'preferences', 'manage subscription', 'opt out',
+      'privacy policy', 'terms of service', 'contact us',
+      'newsletter', 'update', 'deals', 'sale', 'offer',
+      'view in browser', 'email preferences', 'notification settings'
+    ];
+    
+    for (const word of legitMarketingWords) {
+      if (lowerText.includes(word)) {
+        legitimateMarketingIndicators++;
+      }
+    }
+
+    // Check for phishing keywords (weight: 1, but reduced if legitimate marketing detected)
     for (const keyword of PHISHING_KEYWORDS) {
       if (lowerText.includes(keyword)) {
-        score++;
+        phishingScore++;
       }
     }
 
@@ -280,12 +335,24 @@ export class PhishingDetector {
       }
     }
 
+    // SMART ADJUSTMENT: If legitimate marketing indicators present, reduce phishing score significantly
+    if (legitimateMarketingIndicators >= 2) {
+      // This looks like a legitimate newsletter/marketing email
+      phishingScore = Math.max(0, Math.floor(phishingScore * 0.2)); // Reduce by 80%
+      spamScore = Math.max(0, Math.floor(spamScore * 0.3)); // Also reduce spam score by 70%
+      console.log('[APG] Legitimate marketing email detected, reducing false positive score');
+    } else if (legitimateMarketingIndicators >= 1) {
+      // Some legitimate indicators, reduce score moderately
+      phishingScore = Math.max(0, Math.floor(phishingScore * 0.5)); // Reduce by 50%
+      console.log('[APG] Possible legitimate email detected, reducing score');
+    }
+
     // Combined score with spam weight
-    const totalScore = score + spamScore;
+    const totalScore = phishingScore + spamScore;
     
-    // Log aggressive spam detection
+    // Log spam detection (only if significant)
     if (spamScore > 0) {
-      console.warn(`[APG] SPAM indicators found! Score: ${spamScore}, Total: ${totalScore}`);
+      console.warn(`[APG] SPAM indicators found! Spam: ${spamScore}, Phishing: ${phishingScore}, Total: ${totalScore}`);
     }
 
     return totalScore;
@@ -293,12 +360,22 @@ export class PhishingDetector {
 
   /**
    * Calculate final threat level considering all factors
-   * ENHANCED: More aggressive for spam context
+   * ENHANCED: Balanced approach - aggressive on real threats, lenient on legitimate services
    */
   static calculateFinalThreatLevel(analysis) {
-    const { issues, isLegitimate, contextScore } = analysis;
+    const { issues, isLegitimate, contextScore, domain } = analysis;
 
-    if (isLegitimate) {
+    // CRITICAL: If domain is legitimate, don't flag based on context alone
+    if (isLegitimate || this.isLegitimateService(domain)) {
+      // Only flag legitimate domains if they have actual technical issues
+      const technicalIssues = issues.filter(i => 
+        i.type !== 'suspicious_context' && i.severity === 'high'
+      );
+      
+      if (technicalIssues.length >= 2) {
+        return THREAT_LEVELS.SUSPICIOUS; // Even legitimate domains can be compromised
+      }
+      
       return THREAT_LEVELS.SAFE;
     }
 
@@ -309,28 +386,29 @@ export class PhishingDetector {
     // Base scoring system
     let score = (highCount * 3) + (mediumCount * 2) + lowCount;
     
-    // CRITICAL: Add context score (makes spam detection aggressive)
+    // Add context score but with significantly reduced weight to prevent false positives
     if (contextScore) {
-      score += contextScore;
+      // Further reduce context weight - only add 30% of context score
+      score += Math.floor(contextScore * 0.3);
     }
 
-    // AGGRESSIVE: High context score alone can mark as dangerous
-    if (contextScore >= 9) { // 3+ SPAM indicators
-      console.warn(`[APG] DANGEROUS: High spam context score: ${contextScore}`);
+    // BALANCED: Very high context score can mark as dangerous (significantly raised thresholds)
+    if (contextScore >= 15) { // 5+ SPAM indicators (raised from 12)
+      console.warn(`[APG] DANGEROUS: Very high spam context score: ${contextScore}`);
       return THREAT_LEVELS.DANGEROUS;
     }
     
-    if (contextScore >= 5) { // Multiple phishing keywords or 1-2 spam indicators
-      console.warn(`[APG] SUSPICIOUS: Elevated spam context score: ${contextScore}`);
+    if (contextScore >= 12) { // 4 SPAM indicators (raised from 9)
+      console.warn(`[APG] SUSPICIOUS: High spam context score: ${contextScore}`);
       return THREAT_LEVELS.SUSPICIOUS;
     }
 
-    // Original scoring logic with lower thresholds
-    if (score >= 5 || highCount >= 2) {
+    // Original scoring logic with adjusted thresholds
+    if (score >= 7 || highCount >= 3) { // Raised from 6 and 2
       return THREAT_LEVELS.DANGEROUS;
-    } else if (score >= 2 || highCount >= 1 || mediumCount >= 2) {
+    } else if (score >= 4 || highCount >= 2 || mediumCount >= 3) { // Raised thresholds
       return THREAT_LEVELS.SUSPICIOUS;
-    } else if (issues.length > 0) {
+    } else if (score >= 2 && issues.length > 0) { // Only flag if score is meaningful
       return THREAT_LEVELS.SUSPICIOUS;
     }
 
