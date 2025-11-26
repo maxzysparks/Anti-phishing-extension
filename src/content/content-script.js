@@ -61,25 +61,39 @@ async function init() {
   // CRITICAL FIX #3: Show loading status
   showExtensionStatus('loading', 'Initializing protection...');
   
-  // Get settings
-  try {
-    const response = await chrome.runtime.sendMessage({ action: 'getSettings' });
-    if (response && response.success) {
-      settings = response.data;
-      console.log('[APG] Settings loaded:', settings);
-      extensionActive = true;
+  // Get settings with retry logic
+  let settingsLoaded = false;
+  let retries = 5;
+  
+  while (!settingsLoaded && retries > 0) {
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'getSettings' });
+      if (response && response.success) {
+        settings = response.data;
+        console.log('[APG] Settings loaded:', settings);
+        extensionActive = true;
+        settingsLoaded = true;
+        
+        // CRITICAL FIX #3: Show active status
+        showExtensionStatus('active', 'Protection active');
+      } else {
+        throw new Error('Invalid response');
+      }
+    } catch (error) {
+      retries--;
+      console.warn(`[APG] Settings load attempt failed (${6-retries}/5):`, error.message);
       
-      // CRITICAL FIX #3: Show active status
-      showExtensionStatus('active', 'Protection active');
-    } else {
-      console.warn('[APG] Failed to load settings, using defaults');
-      settings = { enabled: true };
-      showExtensionStatus('error', 'Using default settings');
+      if (retries > 0) {
+        // Exponential backoff: 200ms, 400ms, 800ms, 1600ms, 3200ms
+        const delay = 200 * Math.pow(2, 5 - retries);
+        console.log(`[APG] Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        console.warn('[APG] All retry attempts failed, using defaults');
+        settings = { enabled: true };
+        showExtensionStatus('error', 'Using default settings');
+      }
     }
-  } catch (error) {
-    console.error('[APG] Error loading settings:', error);
-    settings = { enabled: true };
-    showExtensionStatus('error', 'Connection issue - using defaults');
   }
 
   // CRITICAL FIX #4: Establish persistent connection for reconnection
