@@ -55,22 +55,48 @@ async function initializeTensorFlow() {
   }
 }
 
-// INSTANT STARTUP: Lazy loading - components initialize only when needed
-console.log('[System] ⚡ INSTANT STARTUP MODE - Components load on-demand');
-console.log('[System] Extension ready immediately! ML models will load in background.');
+// HYBRID STARTUP: Critical ML at startup, heavy components lazy
+console.log('[System] ⚡ HYBRID STARTUP MODE - Critical ML loads fast, heavy components on-demand');
+console.log('[System] Extension ready immediately!');
 
-// Initialize only critical components in background (non-blocking)
+// Initialize CRITICAL components immediately (non-blocking, fast)
 setTimeout(() => {
-  console.log('[Background] Starting lazy initialization of ML components...');
+  console.log('[Startup] Initializing critical ML components...');
   
-  // TensorFlow loads silently in background
-  initializeTensorFlow().catch(err => {
-    console.warn('[ML] TF init failed (non-critical):', err.message);
+  // Priority 1: TensorFlow (needed for all ML)
+  initializeTensorFlow().then(() => {
+    console.log('[Startup] ✓ TensorFlow ready');
+    
+    // Priority 2: Ensemble Detector (highest accuracy, fast to load)
+    PatternDetector.initializeEnsemble().then(() => {
+      console.log('[Startup] ✓ Ensemble ready');
+    }).catch(err => {
+      console.warn('[Startup] Ensemble init failed:', err.message);
+    });
+    
+    // Priority 3: Zero-Day Detector (important for novel threats)
+    PatternDetector.initializeZeroDay().then(() => {
+      console.log('[Startup] ✓ Zero-Day detector ready');
+    }).catch(err => {
+      console.warn('[Startup] Zero-Day init failed:', err.message);
+    });
+    
+    // Priority 4: LSTM (temporal analysis)
+    PatternDetector.initializeLSTM().then(() => {
+      console.log('[Startup] ✓ LSTM ready');
+    }).catch(err => {
+      console.warn('[Startup] LSTM init failed:', err.message);
+    });
+    
+  }).catch(err => {
+    console.warn('[Startup] TF init failed:', err.message);
   });
   
-  // Everything else loads on-demand when first used
-  console.log('[Background] All other components will load when needed');
-}, 2000); // Start after 2 seconds, doesn't block anything
+  console.log('[Startup] Critical ML components loading... Heavy components will load on-demand');
+}, 500); // Start fast - only 500ms delay
+
+// Heavy components load on-demand (P2P, GNN, Analytics, etc.)
+console.log('[System] Heavy components (P2P, GNN, Analytics) will load when needed');
 
 // Initialize default settings on install
 chrome.runtime.onInstalled.addListener(async (details) => {

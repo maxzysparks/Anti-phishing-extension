@@ -119,15 +119,17 @@ export class PhishingDetector {
           await StorageManager.cacheThreat(url, result);
           await StorageManager.incrementBlocked();
           
-          // PHASE 4: Share threat with P2P network
+          // PHASE 4: Share threat with P2P network (safe call with initialization check)
           try {
-            await p2pThreatNetwork.shareThreat({
-              url: url,
-              type: 'phishing',
-              severity: 'critical',
-              source: 'phishtank',
-              verified: phishTankResult.verified
-            });
+            if (p2pThreatNetwork && typeof p2pThreatNetwork.shareThreat === 'function') {
+              await p2pThreatNetwork.shareThreat({
+                url: url,
+                type: 'phishing',
+                severity: 'critical',
+                source: 'phishtank',
+                verified: phishTankResult.verified
+              });
+            }
           } catch (p2pError) {
             console.warn('[P2P] Failed to share threat:', p2pError.message);
           }
@@ -138,14 +140,16 @@ export class PhishingDetector {
           return result;
         }
         
-        // PHASE 4: Check P2P network for community-reported threats
+        // PHASE 4: Check P2P network for community-reported threats (safe call)
         try {
-          const networkThreatCount = await p2pThreatNetwork.getNetworkThreatCount({
-            timeWindow: 86400000 // Last 24 hours
-          });
-          
-          if (networkThreatCount > 0) {
-            console.log(`[P2P] Network has ${networkThreatCount} recent threats`);
+          if (p2pThreatNetwork && typeof p2pThreatNetwork.getNetworkThreatCount === 'function') {
+            const networkThreatCount = await p2pThreatNetwork.getNetworkThreatCount({
+              timeWindow: 86400000 // Last 24 hours
+            });
+            
+            if (networkThreatCount > 0) {
+              console.log(`[P2P] Network has ${networkThreatCount} recent threats`);
+            }
           }
         } catch (p2pError) {
           console.warn('[P2P] Network query failed:', p2pError.message);
@@ -155,9 +159,9 @@ export class PhishingDetector {
       // Perform local analysis (works offline)
       const analysis = analyzeURL(url);
       
-      // ENHANCED: ML pattern detection
-      const mlAnalysis = PatternDetector.analyze(url);
-      if (mlAnalysis.score > 0) {
+      // ENHANCED: ML pattern detection with null check
+      const mlAnalysis = await PatternDetector.analyze(url);
+      if (mlAnalysis && mlAnalysis.score > 0) {
         analysis.mlScore = mlAnalysis.score;
         analysis.mlConfidence = mlAnalysis.confidence;
         analysis.mlClassification = mlAnalysis.classification;
@@ -242,30 +246,34 @@ export class PhishingDetector {
       if (analysis.threatLevel === THREAT_LEVELS.DANGEROUS) {
         await StorageManager.incrementBlocked();
         
-        // PHASE 4: Share dangerous threat with P2P network and distributed DB
+        // PHASE 4: Share dangerous threat with P2P network and distributed DB (safe calls)
         if (!isOffline) {
           try {
-            // Share with P2P network
-            await p2pThreatNetwork.shareThreat({
-              url: url,
-              type: 'phishing',
-              severity: 'high',
-              confidence: analysis.mlConfidence || analysis.confidence,
-              techniques: analysis.issues.map(i => i.type)
-            });
+            // Share with P2P network (check if initialized)
+            if (p2pThreatNetwork && typeof p2pThreatNetwork.shareThreat === 'function') {
+              await p2pThreatNetwork.shareThreat({
+                url: url,
+                type: 'phishing',
+                severity: 'high',
+                confidence: analysis.mlConfidence || analysis.confidence,
+                techniques: analysis.issues.map(i => i.type)
+              });
+            }
             
-            // Add to distributed threat database
-            await distributedThreatDB.addThreat({
-              url: url,
-              domain: domain,
-              type: 'phishing',
-              severity: 'high',
-              timestamp: Date.now(),
-              issues: analysis.issues,
-              mlScore: analysis.mlScore
-            });
+            // Add to distributed threat database (check if initialized)
+            if (distributedThreatDB && typeof distributedThreatDB.addThreat === 'function') {
+              await distributedThreatDB.addThreat({
+                url: url,
+                domain: domain,
+                type: 'phishing',
+                severity: 'high',
+                timestamp: Date.now(),
+                issues: analysis.issues,
+                mlScore: analysis.mlScore
+              });
+            }
             
-            console.log('[Phase 4] Threat shared with network and distributed DB');
+            console.log('[Phase 4] Threat shared with available network components');
           } catch (phase4Error) {
             console.warn('[Phase 4] Failed to share threat:', phase4Error.message);
           }
