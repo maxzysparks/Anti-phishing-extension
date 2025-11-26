@@ -111,11 +111,11 @@ export class EnsembleDetector {
         activation: 'sigmoid'
       }));
       
-      // Compile
+      // Compile (only use built-in metrics)
       model.compile({
         optimizer: tf.train.adam(0.001),
         loss: 'binaryCrossentropy',
-        metrics: ['accuracy', 'precision', 'recall']
+        metrics: ['accuracy']
       });
       
       this.models.neuralNetwork = model;
