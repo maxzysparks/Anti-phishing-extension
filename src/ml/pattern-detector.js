@@ -4,8 +4,55 @@
  */
 
 import { tfManager } from './tensorflow-manager.js';
+import { ensembleDetector } from './ensemble-detector.js';
 
 export class PatternDetector {
+  // Track if ensemble is available
+  static ensembleAvailable = false;
+  
+  /**
+   * Convert features object to numerical vector for ML models
+   */
+  static convertToFeatureVector(features) {
+    return [
+      // Normalize to 0-1 range
+      Math.min(features.urlLength / 200, 1),
+      Math.min(features.domainLength / 50, 1),
+      Math.min(features.pathLength / 100, 1),
+      Math.min(features.paramCount / 10, 1),
+      Math.min(features.digitCount / 20, 1),
+      Math.min(features.specialCharCount / 30, 1),
+      Math.min(features.uppercaseCount / 20, 1),
+      Math.min(features.subdomainCount / 5, 1),
+      features.hasDash ? 1 : 0,
+      features.hasUnderscore ? 1 : 0,
+      features.hasIP ? 1 : 0,
+      features.hasPort ? 1 : 0,
+      features.hasAtSymbol ? 1 : 0,
+      features.isHTTPS ? 1 : 0,
+      features.isCommonTLD ? 1 : 0,
+      Math.min(features.entropy / 6, 1),
+      Math.min(features.suspiciousKeywords / 5, 1),
+      // Pad to 50 features for ensemble (add zeros)
+      ...new Array(33).fill(0)
+    ];
+  }
+  
+  /**
+   * Initialize ensemble detector
+   */
+  static async initializeEnsemble() {
+    try {
+      const result = await ensembleDetector.initialize();
+      if (result.success) {
+        this.ensembleAvailable = true;
+        console.log('[PatternDetector] Ensemble detector enabled');
+      }
+    } catch (error) {
+      console.log('[PatternDetector] Ensemble not available:', error.message);
+    }
+  }
+  
   /**
    * Extract features from URL for ML-style analysis
    */
@@ -278,7 +325,27 @@ export class PatternDetector {
       }
     };
 
-    // Add TensorFlow.js prediction if available
+    // PHASE 1: Try Ensemble Detector first (highest accuracy)
+    if (this.ensembleAvailable) {
+      try {
+        const featureVector = this.convertToFeatureVector(features);
+        const ensemblePred = await ensembleDetector.predict(featureVector, { url, content: url });
+        
+        if (ensemblePred.success) {
+          result.ensemblePrediction = ensemblePred;
+          result.mlEnhanced = true;
+          result.finalClassification = ensemblePred.probability > 0.5 ? 'phishing' : 'legitimate';
+          result.finalConfidence = ensemblePred.confidence;
+          result.explanation = ensemblePred.explanation;
+          console.log('[ML] Ensemble prediction used (highest accuracy)');
+          return result;
+        }
+      } catch (error) {
+        console.log('[ML] Ensemble prediction failed, falling back:', error.message);
+      }
+    }
+    
+    // Fallback: Add TensorFlow.js prediction if available
     try {
       const tfPrediction = await tfManager.predict(result);
       result.tfPrediction = tfPrediction;

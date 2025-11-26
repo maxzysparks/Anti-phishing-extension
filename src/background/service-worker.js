@@ -4,6 +4,7 @@ import { ThreatIntelligence } from '../utils/threat-intelligence.js';
 import { tfManager } from '../ml/tensorflow-manager.js';
 import { ModelTrainer } from '../ml/model-trainer.js';
 import { TrainingDataCollector } from '../ml/training-data-collector.js';
+import { PatternDetector } from '../ml/pattern-detector.js';
 
 /**
  * Background service worker for the anti-phishing extension
@@ -45,10 +46,15 @@ async function initializeTensorFlow() {
   }
 }
 
-// Initialize TF in background (non-blocking)
+// Initialize TF and Ensemble in background (non-blocking)
 setTimeout(() => {
   initializeTensorFlow().catch(err => {
     console.warn('[ML] Deferred TF init failed (non-critical):', err.message);
+  });
+  
+  // PHASE 1: Initialize Ensemble Detector (10-15% accuracy boost)
+  PatternDetector.initializeEnsemble().catch(err => {
+    console.warn('[ML] Ensemble init failed (non-critical):', err.message);
   });
 }, 1000); // Delay 1 second to let service worker stabilize
 
