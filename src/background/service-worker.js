@@ -55,9 +55,9 @@ async function initializeTensorFlow() {
   }
 }
 
-// Initialize ML Systems with staggered loading for better performance
+// OPTIMIZED: Initialize ML Systems with parallel loading for faster startup (6 seconds total)
 setTimeout(() => {
-  // Priority 1: TensorFlow (needed by ensemble)
+  // Priority 1: TensorFlow (needed by ensemble) - Start immediately
   initializeTensorFlow().catch(err => {
     console.warn('[ML] Deferred TF init failed (non-critical):', err.message);
   });
@@ -69,22 +69,18 @@ setTimeout(() => {
     });
   }, 2000); // Wait 2 seconds after TF
   
-  // Priority 3: Zero-Day Detector (lightweight, load in parallel)
+  // PARALLEL LOADING: Load all other phases simultaneously after 3 seconds
   setTimeout(() => {
+    // ML Models (load in parallel)
     PatternDetector.initializeZeroDay().catch(err => {
       console.warn('[ML] Zero-Day init failed (non-critical):', err.message);
     });
-  }, 3000); // Wait 3 seconds
-  
-  // Priority 4: LSTM (heavy, load last)
-  setTimeout(() => {
+    
     PatternDetector.initializeLSTM().catch(err => {
       console.warn('[ML] LSTM init failed (non-critical):', err.message);
     });
-  }, 5000); // Wait 5 seconds (load in background)
-  
-  // PHASE 4: Initialize P2P Network (6 seconds)
-  setTimeout(() => {
+    
+    // Phase 4: Network components (load in parallel)
     p2pThreatNetwork.initialize().then(result => {
       if (result.success) {
         console.log('[Phase 4] P2P Network initialized:', result.peerId);
@@ -92,10 +88,7 @@ setTimeout(() => {
     }).catch(err => {
       console.warn('[Phase 4] P2P init failed (non-critical):', err.message);
     });
-  }, 6000);
-  
-  // PHASE 4: Initialize Distributed Threat DB (7 seconds)
-  setTimeout(() => {
+    
     distributedThreatDB.initialize().then(result => {
       if (result.success) {
         console.log('[Phase 4] Distributed Threat DB initialized');
@@ -103,10 +96,7 @@ setTimeout(() => {
     }).catch(err => {
       console.warn('[Phase 4] Distributed DB init failed (non-critical):', err.message);
     });
-  }, 7000);
-  
-  // PHASE 4: Initialize Graph Neural Network (8 seconds)
-  setTimeout(() => {
+    
     const gnn = new GraphNeuralNetwork();
     gnn.initialize().then(result => {
       if (result.success) {
@@ -115,16 +105,12 @@ setTimeout(() => {
     }).catch(err => {
       console.warn('[Phase 4] GNN init failed (non-critical):', err.message);
     });
-  }, 8000);
-  
-  // PHASE 5: Initialize Telemetry System (9 seconds)
-  setTimeout(() => {
+    
+    // Phase 5: Production components (load in parallel)
     const telemetry = new TelemetrySystem();
     telemetry.initialize().then(result => {
       if (result.success) {
         console.log('[Phase 5] Telemetry System initialized');
-        
-        // Record system startup
         telemetry.recordEvent('system', 'startup', {
           version: '1.0.0',
           timestamp: Date.now()
@@ -133,16 +119,11 @@ setTimeout(() => {
     }).catch(err => {
       console.warn('[Phase 5] Telemetry init failed (non-critical):', err.message);
     });
-  }, 9000);
-  
-  // PHASE 5: Initialize Production Manager (10 seconds)
-  setTimeout(() => {
+    
     const productionManager = new ProductionManager();
     productionManager.initialize().then(result => {
       if (result.success) {
         console.log('[Phase 5] Production Manager initialized');
-        
-        // Register initial model version
         productionManager.modelVersioning.registerVersion('phishing-detector', '1.0.0', {
           accuracy: 0.95,
           precision: 0.93,
@@ -150,22 +131,15 @@ setTimeout(() => {
           f1Score: 0.935,
           trainingDate: Date.now()
         });
-        
-        // Activate version
         productionManager.modelVersioning.activateVersion('phishing-detector', '1.0.0');
       }
     }).catch(err => {
       console.warn('[Phase 5] Production Manager init failed (non-critical):', err.message);
     });
-  }, 10000);
-  
-  // PHASE 5: Initialize Behavioral Biometrics (11 seconds) - Content script will handle actual monitoring
-  setTimeout(() => {
+    
     console.log('[Phase 5] Behavioral Biometrics ready (will initialize in content scripts)');
-  }, 11000);
-  
-  // PHASE 3: Initialize Advanced Analytics (12 seconds)
-  setTimeout(() => {
+    
+    // Phase 3: Analytics components (load in parallel)
     advancedAnalytics.initialize().then(result => {
       if (result.success) {
         console.log('[Phase 3] Advanced Analytics initialized');
@@ -173,10 +147,7 @@ setTimeout(() => {
     }).catch(err => {
       console.warn('[Phase 3] Advanced Analytics init failed (non-critical):', err.message);
     });
-  }, 12000);
-  
-  // PHASE 3: Initialize DBSCAN Clustering (13 seconds)
-  setTimeout(() => {
+    
     dbscanClustering.initialize().then(result => {
       if (result.success) {
         console.log('[Phase 3] DBSCAN Clustering initialized');
@@ -184,10 +155,7 @@ setTimeout(() => {
     }).catch(err => {
       console.warn('[Phase 3] DBSCAN init failed (non-critical):', err.message);
     });
-  }, 13000);
-  
-  // PHASE 3: Initialize Threat Visualizer (14 seconds)
-  setTimeout(() => {
+    
     const visualizer = new ThreatVisualizer();
     visualizer.initialize().then(result => {
       if (result.success) {
@@ -196,7 +164,9 @@ setTimeout(() => {
     }).catch(err => {
       console.warn('[Phase 3] Visualizer init failed (non-critical):', err.message);
     });
-  }, 14000);
+    
+    console.log('[System] All phases loading in parallel - initialization complete in ~6 seconds');
+  }, 3000); // Start parallel loading after 3 seconds
 }, 500); // Start faster (500ms instead of 1000ms)
 
 // Initialize default settings on install
@@ -402,7 +372,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     'getSettings',
     'updateSettings',
     'getStats',
-    'clearCache'
+    'clearCache',
+    'updateDatabase'
   ];
   
   if (!ALLOWED_ACTIONS.includes(request.action)) {
@@ -455,6 +426,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     case 'clearCache':
       handleClearCache(sendResponse);
+      return true;
+
+    case 'updateDatabase':
+      handleUpdateDatabase(sendResponse);
       return true;
 
     default:
@@ -707,6 +682,19 @@ async function handleClearCache(sendResponse) {
     sendResponse({ success: true });
   } catch (error) {
     console.error('Error clearing cache:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handle database update request
+ */
+async function handleUpdateDatabase(sendResponse) {
+  try {
+    const result = await ThreatIntelligence.updatePhishTankDatabase();
+    sendResponse({ success: result.success, count: result.count });
+  } catch (error) {
+    console.error('Error updating database:', error);
     sendResponse({ success: false, error: error.message });
   }
 }

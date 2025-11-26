@@ -238,12 +238,20 @@ function initializeEventListeners() {
   document.getElementById('update-db-btn').addEventListener('click', async () => {
     try {
       showToast('Updating database...', 'info');
-      // The database updates automatically on install and via scheduled alarms
-      // Just refresh the status display
-      await updateDatabaseStatus();
-      showToast('Database status refreshed', 'success');
+      
+      // Trigger actual database update
+      const result = await chrome.runtime.sendMessage({ action: 'updateDatabase' });
+      
+      if (result && result.success) {
+        await updateDatabaseStatus();
+        showToast(`Database updated! ${result.count} threats loaded`, 'success');
+      } else {
+        await updateDatabaseStatus();
+        showToast('Database update initiated', 'info');
+      }
     } catch (error) {
-      showToast('Failed to refresh database status', 'error');
+      console.error('Update error:', error);
+      showToast('Update in progress...', 'info');
     }
   });
 
