@@ -6,6 +6,9 @@ import { ThreatIntelligence } from './threat-intelligence.js';
 import { SSLValidator } from './ssl-validator.js';
 import { PatternDetector } from '../ml/pattern-detector.js';
 import { THREAT_LEVELS, PHISHING_KEYWORDS, SPAM_INDICATORS, LEGITIMATE_DOMAINS, LEGITIMATE_TRACKING_DOMAINS } from './constants.js';
+import { p2pThreatNetwork } from '../network/p2p-threat-network.js';
+import { GraphNeuralNetwork } from '../ml/graph-neural-network.js';
+import { distributedThreatDB } from '../network/distributed-threat-db.js';
 
 /**
  * Main phishing detection engine
@@ -116,10 +119,36 @@ export class PhishingDetector {
           await StorageManager.cacheThreat(url, result);
           await StorageManager.incrementBlocked();
           
+          // PHASE 4: Share threat with P2P network
+          try {
+            await p2pThreatNetwork.shareThreat({
+              url: url,
+              type: 'phishing',
+              severity: 'critical',
+              source: 'phishtank',
+              verified: phishTankResult.verified
+            });
+          } catch (p2pError) {
+            console.warn('[P2P] Failed to share threat:', p2pError.message);
+          }
+          
           // Show immediate notification for PhishTank matches
           await NotificationManager.showThreatBlocked(url, result.threatLevel, 1);
           
           return result;
+        }
+        
+        // PHASE 4: Check P2P network for community-reported threats
+        try {
+          const networkThreatCount = await p2pThreatNetwork.getNetworkThreatCount({
+            timeWindow: 86400000 // Last 24 hours
+          });
+          
+          if (networkThreatCount > 0) {
+            console.log(`[P2P] Network has ${networkThreatCount} recent threats`);
+          }
+        } catch (p2pError) {
+          console.warn('[P2P] Network query failed:', p2pError.message);
         }
       }
 
@@ -212,6 +241,35 @@ export class PhishingDetector {
       await StorageManager.incrementScanned();
       if (analysis.threatLevel === THREAT_LEVELS.DANGEROUS) {
         await StorageManager.incrementBlocked();
+        
+        // PHASE 4: Share dangerous threat with P2P network and distributed DB
+        if (!isOffline) {
+          try {
+            // Share with P2P network
+            await p2pThreatNetwork.shareThreat({
+              url: url,
+              type: 'phishing',
+              severity: 'high',
+              confidence: analysis.mlConfidence || analysis.confidence,
+              techniques: analysis.issues.map(i => i.type)
+            });
+            
+            // Add to distributed threat database
+            await distributedThreatDB.addThreat({
+              url: url,
+              domain: domain,
+              type: 'phishing',
+              severity: 'high',
+              timestamp: Date.now(),
+              issues: analysis.issues,
+              mlScore: analysis.mlScore
+            });
+            
+            console.log('[Phase 4] Threat shared with network and distributed DB');
+          } catch (phase4Error) {
+            console.warn('[Phase 4] Failed to share threat:', phase4Error.message);
+          }
+        }
         
         // Show notification for dangerous threats (with deduplication)
         await NotificationManager.showThreatBlocked(

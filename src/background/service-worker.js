@@ -5,6 +5,9 @@ import { tfManager } from '../ml/tensorflow-manager.js';
 import { ModelTrainer } from '../ml/model-trainer.js';
 import { TrainingDataCollector } from '../ml/training-data-collector.js';
 import { PatternDetector } from '../ml/pattern-detector.js';
+import { p2pThreatNetwork } from '../network/p2p-threat-network.js';
+import { GraphNeuralNetwork } from '../ml/graph-neural-network.js';
+import { distributedThreatDB } from '../network/distributed-threat-db.js';
 
 /**
  * Background service worker for the anti-phishing extension
@@ -73,6 +76,40 @@ setTimeout(() => {
       console.warn('[ML] LSTM init failed (non-critical):', err.message);
     });
   }, 5000); // Wait 5 seconds (load in background)
+  
+  // PHASE 4: Initialize P2P Network (6 seconds)
+  setTimeout(() => {
+    p2pThreatNetwork.initialize().then(result => {
+      if (result.success) {
+        console.log('[Phase 4] P2P Network initialized:', result.peerId);
+      }
+    }).catch(err => {
+      console.warn('[Phase 4] P2P init failed (non-critical):', err.message);
+    });
+  }, 6000);
+  
+  // PHASE 4: Initialize Distributed Threat DB (7 seconds)
+  setTimeout(() => {
+    distributedThreatDB.initialize().then(result => {
+      if (result.success) {
+        console.log('[Phase 4] Distributed Threat DB initialized');
+      }
+    }).catch(err => {
+      console.warn('[Phase 4] Distributed DB init failed (non-critical):', err.message);
+    });
+  }, 7000);
+  
+  // PHASE 4: Initialize Graph Neural Network (8 seconds)
+  setTimeout(() => {
+    const gnn = new GraphNeuralNetwork();
+    gnn.initialize().then(result => {
+      if (result.success) {
+        console.log('[Phase 4] Graph Neural Network initialized');
+      }
+    }).catch(err => {
+      console.warn('[Phase 4] GNN init failed (non-critical):', err.message);
+    });
+  }, 8000);
 }, 500); // Start faster (500ms instead of 1000ms)
 
 // Initialize default settings on install
