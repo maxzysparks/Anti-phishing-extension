@@ -11,6 +11,9 @@ import { distributedThreatDB } from '../network/distributed-threat-db.js';
 import { behavioralBiometrics } from '../security/behavioral-biometrics.js';
 import { TelemetrySystem } from '../production/telemetry-system.js';
 import { ProductionManager } from '../production/production-suite.js';
+import { advancedAnalytics } from '../analytics/advanced-analytics.js';
+import { dbscanClustering } from '../analytics/dbscan-clustering.js';
+import { ThreatVisualizer } from '../visualization/threat-visualizer.js';
 
 /**
  * Background service worker for the anti-phishing extension
@@ -160,6 +163,40 @@ setTimeout(() => {
   setTimeout(() => {
     console.log('[Phase 5] Behavioral Biometrics ready (will initialize in content scripts)');
   }, 11000);
+  
+  // PHASE 3: Initialize Advanced Analytics (12 seconds)
+  setTimeout(() => {
+    advancedAnalytics.initialize().then(result => {
+      if (result.success) {
+        console.log('[Phase 3] Advanced Analytics initialized');
+      }
+    }).catch(err => {
+      console.warn('[Phase 3] Advanced Analytics init failed (non-critical):', err.message);
+    });
+  }, 12000);
+  
+  // PHASE 3: Initialize DBSCAN Clustering (13 seconds)
+  setTimeout(() => {
+    dbscanClustering.initialize().then(result => {
+      if (result.success) {
+        console.log('[Phase 3] DBSCAN Clustering initialized');
+      }
+    }).catch(err => {
+      console.warn('[Phase 3] DBSCAN init failed (non-critical):', err.message);
+    });
+  }, 13000);
+  
+  // PHASE 3: Initialize Threat Visualizer (14 seconds)
+  setTimeout(() => {
+    const visualizer = new ThreatVisualizer();
+    visualizer.initialize().then(result => {
+      if (result.success) {
+        console.log('[Phase 3] Threat Visualizer initialized');
+      }
+    }).catch(err => {
+      console.warn('[Phase 3] Visualizer init failed (non-critical):', err.message);
+    });
+  }, 14000);
 }, 500); // Start faster (500ms instead of 1000ms)
 
 // Initialize default settings on install
