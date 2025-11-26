@@ -46,27 +46,34 @@ async function initializeTensorFlow() {
   }
 }
 
-// Initialize TF and Advanced ML Systems in background (non-blocking)
+// Initialize ML Systems with staggered loading for better performance
 setTimeout(() => {
+  // Priority 1: TensorFlow (needed by ensemble)
   initializeTensorFlow().catch(err => {
     console.warn('[ML] Deferred TF init failed (non-critical):', err.message);
   });
   
-  // PHASE 1: Initialize Ensemble Detector (10-15% accuracy boost)
-  PatternDetector.initializeEnsemble().catch(err => {
-    console.warn('[ML] Ensemble init failed (non-critical):', err.message);
-  });
+  // Priority 2: Ensemble Detector (highest accuracy, load after TF)
+  setTimeout(() => {
+    PatternDetector.initializeEnsemble().catch(err => {
+      console.warn('[ML] Ensemble init failed (non-critical):', err.message);
+    });
+  }, 2000); // Wait 2 seconds after TF
   
-  // PHASE 2: Initialize LSTM Temporal Analyzer (attack prediction)
-  PatternDetector.initializeLSTM().catch(err => {
-    console.warn('[ML] LSTM init failed (non-critical):', err.message);
-  });
+  // Priority 3: Zero-Day Detector (lightweight, load in parallel)
+  setTimeout(() => {
+    PatternDetector.initializeZeroDay().catch(err => {
+      console.warn('[ML] Zero-Day init failed (non-critical):', err.message);
+    });
+  }, 3000); // Wait 3 seconds
   
-  // PHASE 2: Initialize Zero-Day Detector (novel threat detection)
-  PatternDetector.initializeZeroDay().catch(err => {
-    console.warn('[ML] Zero-Day init failed (non-critical):', err.message);
-  });
-}, 1000); // Delay 1 second to let service worker stabilize
+  // Priority 4: LSTM (heavy, load last)
+  setTimeout(() => {
+    PatternDetector.initializeLSTM().catch(err => {
+      console.warn('[ML] LSTM init failed (non-critical):', err.message);
+    });
+  }, 5000); // Wait 5 seconds (load in background)
+}, 500); // Start faster (500ms instead of 1000ms)
 
 // Initialize default settings on install
 chrome.runtime.onInstalled.addListener(async (details) => {
