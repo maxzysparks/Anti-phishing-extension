@@ -8,6 +8,49 @@ console.log('[APG] Current URL:', window.location.href);
 
 let settings = {};
 let processedLinks = new Set();
+let extensionActive = false;
+let connectionPort = null;
+
+// CRITICAL FIX #3: User Feedback - Show extension status
+function showExtensionStatus(status, message) {
+  // Remove existing status indicator
+  const existing = document.getElementById('apg-status-indicator');
+  if (existing) existing.remove();
+  
+  // Create status indicator
+  const indicator = document.createElement('div');
+  indicator.id = 'apg-status-indicator';
+  indicator.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: ${status === 'active' ? '#28a745' : status === 'loading' ? '#ffc107' : '#dc3545'};
+    color: white;
+    padding: 10px 15px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    z-index: 999999;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: opacity 0.3s;
+  `;
+  
+  const icon = status === 'active' ? '🛡️' : status === 'loading' ? '⏳' : '⚠️';
+  indicator.innerHTML = `<span style="font-size: 16px;">${icon}</span><span>${message}</span>`;
+  
+  document.body.appendChild(indicator);
+  
+  // Auto-hide success messages after 3 seconds
+  if (status === 'active') {
+    setTimeout(() => {
+      indicator.style.opacity = '0';
+      setTimeout(() => indicator.remove(), 300);
+    }, 3000);
+  }
+}
 
 // Initialize
 init();
@@ -15,19 +58,53 @@ init();
 async function init() {
   console.log('[APG] Initializing content script...');
   
+  // CRITICAL FIX #3: Show loading status
+  showExtensionStatus('loading', 'Initializing protection...');
+  
   // Get settings
   try {
     const response = await chrome.runtime.sendMessage({ action: 'getSettings' });
     if (response && response.success) {
       settings = response.data;
       console.log('[APG] Settings loaded:', settings);
+      extensionActive = true;
+      
+      // CRITICAL FIX #3: Show active status
+      showExtensionStatus('active', 'Protection active');
     } else {
       console.warn('[APG] Failed to load settings, using defaults');
       settings = { enabled: true };
+      showExtensionStatus('error', 'Using default settings');
     }
   } catch (error) {
     console.error('[APG] Error loading settings:', error);
     settings = { enabled: true };
+    showExtensionStatus('error', 'Connection issue - using defaults');
+  }
+
+  // CRITICAL FIX #4: Establish persistent connection for reconnection
+  try {
+    connectionPort = chrome.runtime.connect({ name: 'content-script' });
+    
+    connectionPort.onMessage.addListener((message) => {
+      if (message.type === 'ping') {
+        connectionPort.postMessage({ type: 'pong' });
+      }
+    });
+    
+    connectionPort.onDisconnect.addListener(() => {
+      console.warn('[APG] Connection lost, attempting reconnection...');
+      extensionActive = false;
+      
+      // Try to reconnect after 2 seconds
+      setTimeout(() => {
+        init();
+      }, 2000);
+    });
+    
+    console.log('[APG] Persistent connection established');
+  } catch (connError) {
+    console.warn('[APG] Could not establish persistent connection:', connError);
   }
 
   // Start monitoring - always start regardless of settings

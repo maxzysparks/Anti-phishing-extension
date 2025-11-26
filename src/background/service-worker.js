@@ -59,14 +59,79 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     await StorageManager.saveSettings({});
     console.log('Default settings initialized');
     
-    // FIXED: Don't call updatePhishTankDatabase directly here
-    // scheduleAutomaticUpdates will handle it
-    console.log('Initializing PhishTank threat intelligence...');
+    // CRITICAL FIX #1: Immediately download database on first install
+    console.log('[Install] Starting immediate PhishTank database download...');
+    
+    // Show user notification that setup is in progress
+    try {
+      await chrome.notifications.create('setup-in-progress', {
+        type: 'basic',
+        iconUrl: '/icons/icon48.png',
+        title: '🛡️ Anti-Phishing Guardian',
+        message: 'Setting up protection... Downloading threat database.',
+        priority: 2
+      });
+    } catch (notifError) {
+      console.warn('[Install] Could not show setup notification:', notifError);
+    }
+    
+    // Download database immediately (don't wait for schedule)
+    const downloadResult = await ThreatIntelligence.updatePhishTankDatabase();
+    
+    if (downloadResult.success) {
+      console.log(`[Install] ✓ Database ready: ${downloadResult.count} threats loaded`);
+      
+      // Show success notification
+      try {
+        await chrome.notifications.clear('setup-in-progress');
+        await chrome.notifications.create('setup-complete', {
+          type: 'basic',
+          iconUrl: '/icons/icon48.png',
+          title: '✅ Protection Active',
+          message: `Ready! Monitoring ${downloadResult.count.toLocaleString()} known phishing threats.`,
+          priority: 1
+        });
+        
+        // Auto-clear success notification after 5 seconds
+        setTimeout(() => {
+          chrome.notifications.clear('setup-complete');
+        }, 5000);
+      } catch (notifError) {
+        console.warn('[Install] Could not show success notification:', notifError);
+      }
+    } else {
+      console.error('[Install] ✗ Database download failed:', downloadResult.error);
+      
+      // Show error notification
+      try {
+        await chrome.notifications.clear('setup-in-progress');
+        await chrome.notifications.create('setup-failed', {
+          type: 'basic',
+          iconUrl: '/icons/icon48.png',
+          title: '⚠️ Setup Issue',
+          message: 'Using fallback protection. Check your internet connection.',
+          priority: 2
+        });
+      } catch (notifError) {
+        console.warn('[Install] Could not show error notification:', notifError);
+      }
+    }
+    
+    // Schedule automatic updates for future
+    ThreatIntelligence.scheduleAutomaticUpdates();
   }
   
-  // FIXED: Only schedule once on install, not on every update
-  if (details.reason === 'install') {
-    ThreatIntelligence.scheduleAutomaticUpdates();
+  // On update, check if database needs refresh
+  if (details.reason === 'update') {
+    console.log('[Update] Checking database status...');
+    const stats = await ThreatIntelligence.getDatabaseStats();
+    
+    if (!stats.exists || stats.needsUpdate) {
+      console.log('[Update] Database needs refresh, updating...');
+      ThreatIntelligence.updatePhishTankDatabase();
+    } else {
+      console.log('[Update] Database is current');
+    }
   }
 });
 
@@ -448,18 +513,95 @@ async function handleClearCache(sendResponse) {
   }
 }
 
+// CRITICAL FIX #2: Service Worker Error Recovery and Health Monitoring
+let serviceWorkerHealthy = true;
+let lastHealthCheck = Date.now();
+let consecutiveErrors = 0;
+const MAX_CONSECUTIVE_ERRORS = 5;
+
+/**
+ * Monitor service worker health
+ */
+function monitorServiceWorkerHealth() {
+  const now = Date.now();
+  const timeSinceLastCheck = now - lastHealthCheck;
+  
+  // If more than 5 minutes since last health check, something is wrong
+  if (timeSinceLastCheck > 300000) {
+    console.error('[Service Worker] Health check timeout - worker may be inactive');
+    serviceWorkerHealthy = false;
+    attemptRecovery();
+  }
+  
+  lastHealthCheck = now;
+  
+  // Reset error counter if we're healthy
+  if (serviceWorkerHealthy && consecutiveErrors > 0) {
+    console.log('[Service Worker] Health restored, resetting error counter');
+    consecutiveErrors = 0;
+  }
+}
+
+/**
+ * Attempt to recover from service worker errors
+ */
+async function attemptRecovery() {
+  console.log('[Service Worker] Attempting recovery...');
+  
+  try {
+    // Re-initialize critical components
+    await initializeTensorFlow();
+    
+    // Verify database exists
+    const stats = await ThreatIntelligence.getDatabaseStats();
+    if (!stats.exists) {
+      console.log('[Recovery] Database missing, re-downloading...');
+      await ThreatIntelligence.updatePhishTankDatabase();
+    }
+    
+    // Verify settings exist
+    const settings = await StorageManager.getSettings();
+    if (!settings) {
+      console.log('[Recovery] Settings missing, re-initializing...');
+      await StorageManager.saveSettings({});
+    }
+    
+    serviceWorkerHealthy = true;
+    consecutiveErrors = 0;
+    console.log('[Service Worker] ✓ Recovery successful');
+    
+  } catch (error) {
+    consecutiveErrors++;
+    console.error(`[Service Worker] Recovery failed (attempt ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}):`, error);
+    
+    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+      console.error('[Service Worker] CRITICAL: Max recovery attempts reached');
+      
+      // Show critical error notification to user
+      try {
+        await chrome.notifications.create('critical-error', {
+          type: 'basic',
+          iconUrl: '/icons/icon48.png',
+          title: '🚨 Protection Error',
+          message: 'Extension needs attention. Please reload the extension or restart your browser.',
+          priority: 2,
+          requireInteraction: true
+        });
+      } catch (notifError) {
+        console.error('[Service Worker] Could not show critical error notification:', notifError);
+      }
+    }
+  }
+}
+
 // Keep service worker alive with periodic tasks
 chrome.runtime.onStartup.addListener(() => {
   console.log('Extension started');
-  
-  // FIXED: Don't call scheduleAutomaticUpdates on every startup
-  // It's already scheduled and will persist via alarms
   console.log('Service worker started, alarms will trigger updates as scheduled');
+  
+  // CRITICAL FIX #2: Perform health check on startup
+  monitorServiceWorkerHealth();
 });
-
-// SOLUTION: Keep service worker alive by responding to alarms
-// This prevents the "service worker (Inactive)" issue
-let keepAliveInterval = null;
 
 // Set up keep-alive mechanism
 function setupKeepAlive() {
@@ -477,6 +619,9 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     // Simple operation to keep worker alive
     console.log('[Service Worker] Keep-alive ping');
     
+    // Perform health check
+    monitorServiceWorkerHealth();
+    
     // Check database health periodically
     ThreatIntelligence.getDatabaseStats().then(stats => {
       if (stats.exists && stats.needsUpdate) {
@@ -485,15 +630,16 @@ chrome.alarms.onAlarm.addListener((alarm) => {
       }
     }).catch(err => {
       console.error('[Service Worker] Health check failed:', err);
+      consecutiveErrors++;
+      if (consecutiveErrors >= 3) {
+        attemptRecovery();
+      }
     });
   }
 });
 
 // Initialize keep-alive on service worker activation
 setupKeepAlive();
-
-// FIXED: Remove duplicate onInstalled listener
-// Already handled above
 
 // Handle long-running connections from content scripts
 const connections = new Map();
@@ -527,25 +673,5 @@ chrome.runtime.onConnect.addListener((port) => {
     });
   }
 });
-
-// Ensure service worker stays active during critical operations
-let activeOperations = 0;
-
-function incrementActiveOperations() {
-  activeOperations++;
-  console.log('[Service Worker] Active operations:', activeOperations);
-}
-
-function decrementActiveOperations() {
-  activeOperations = Math.max(0, activeOperations - 1);
-  console.log('[Service Worker] Active operations:', activeOperations);
-}
-
-// Monitor active operations for debugging
-setInterval(() => {
-  if (activeOperations > 0) {
-    console.log('[Service Worker] Currently active operations:', activeOperations);
-  }
-}, 30000); // Log every 30 seconds if there are active operations
 
 console.log('[Service Worker] Initialization complete - Ready to process requests');
