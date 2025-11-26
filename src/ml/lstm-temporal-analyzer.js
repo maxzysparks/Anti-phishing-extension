@@ -111,7 +111,7 @@ export class LSTMTemporalAnalyzer {
       this.model.compile({
         optimizer: tf.train.adam(this.config.learningRate),
         loss: 'binaryCrossentropy',
-        metrics: ['accuracy', 'precision', 'recall']
+        metrics: ['accuracy']
       });
       
       console.log('[LSTM Temporal] Model built successfully');

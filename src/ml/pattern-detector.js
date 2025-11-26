@@ -5,10 +5,14 @@
 
 import { tfManager } from './tensorflow-manager.js';
 import { ensembleDetector } from './ensemble-detector.js';
+import { lstmTemporalAnalyzer } from './lstm-temporal-analyzer.js';
+import { zeroDayDetector } from './zero-day-detector.js';
 
 export class PatternDetector {
-  // Track if ensemble is available
+  // Track if advanced detectors are available
   static ensembleAvailable = false;
+  static lstmAvailable = false;
+  static zeroDayAvailable = false;
   
   /**
    * Convert features object to numerical vector for ML models
@@ -50,6 +54,36 @@ export class PatternDetector {
       }
     } catch (error) {
       console.log('[PatternDetector] Ensemble not available:', error.message);
+    }
+  }
+  
+  /**
+   * Initialize LSTM temporal analyzer
+   */
+  static async initializeLSTM() {
+    try {
+      const result = await lstmTemporalAnalyzer.initialize();
+      if (result.success) {
+        this.lstmAvailable = true;
+        console.log('[PatternDetector] LSTM temporal analyzer enabled');
+      }
+    } catch (error) {
+      console.log('[PatternDetector] LSTM not available:', error.message);
+    }
+  }
+  
+  /**
+   * Initialize zero-day detector
+   */
+  static async initializeZeroDay() {
+    try {
+      const result = await zeroDayDetector.initialize();
+      if (result.success) {
+        this.zeroDayAvailable = true;
+        console.log('[PatternDetector] Zero-day detector enabled');
+      }
+    } catch (error) {
+      console.log('[PatternDetector] Zero-day detector not available:', error.message);
     }
   }
   
@@ -325,7 +359,42 @@ export class PatternDetector {
       }
     };
 
-    // PHASE 1: Try Ensemble Detector first (highest accuracy)
+    // PHASE 2: Check for Zero-Day attacks (novel threats)
+    if (this.zeroDayAvailable) {
+      try {
+        const zeroDayResult = await zeroDayDetector.detectZeroDay({ url, content: url });
+        if (zeroDayResult.success && zeroDayResult.isZeroDay) {
+          result.zeroDayDetection = zeroDayResult;
+          result.isZeroDay = true;
+          result.finalClassification = 'zero-day-phishing';
+          result.finalConfidence = zeroDayResult.confidence;
+          console.log('[ML] Zero-day attack detected!');
+          return result;
+        }
+        result.zeroDayDetection = zeroDayResult;
+      } catch (error) {
+        console.log('[ML] Zero-day detection failed:', error.message);
+      }
+    }
+    
+    // PHASE 2: Add LSTM temporal analysis (attack prediction)
+    if (this.lstmAvailable) {
+      try {
+        const lstmResult = await lstmTemporalAnalyzer.predict({
+          threatCount: result.score / 100,
+          isHighRiskTime: new Date().getHours() >= 18 || new Date().getHours() <= 6
+        });
+        if (lstmResult.success) {
+          result.lstmPrediction = lstmResult;
+          result.attackProbability = lstmResult.probability;
+          result.timeframe = lstmResult.timeframe;
+        }
+      } catch (error) {
+        console.log('[ML] LSTM prediction failed:', error.message);
+      }
+    }
+    
+    // PHASE 1: Try Ensemble Detector (highest accuracy)
     if (this.ensembleAvailable) {
       try {
         const featureVector = this.convertToFeatureVector(features);

@@ -46,7 +46,7 @@ async function initializeTensorFlow() {
   }
 }
 
-// Initialize TF and Ensemble in background (non-blocking)
+// Initialize TF and Advanced ML Systems in background (non-blocking)
 setTimeout(() => {
   initializeTensorFlow().catch(err => {
     console.warn('[ML] Deferred TF init failed (non-critical):', err.message);
@@ -55,6 +55,16 @@ setTimeout(() => {
   // PHASE 1: Initialize Ensemble Detector (10-15% accuracy boost)
   PatternDetector.initializeEnsemble().catch(err => {
     console.warn('[ML] Ensemble init failed (non-critical):', err.message);
+  });
+  
+  // PHASE 2: Initialize LSTM Temporal Analyzer (attack prediction)
+  PatternDetector.initializeLSTM().catch(err => {
+    console.warn('[ML] LSTM init failed (non-critical):', err.message);
+  });
+  
+  // PHASE 2: Initialize Zero-Day Detector (novel threat detection)
+  PatternDetector.initializeZeroDay().catch(err => {
+    console.warn('[ML] Zero-Day init failed (non-critical):', err.message);
   });
 }, 1000); // Delay 1 second to let service worker stabilize
 
