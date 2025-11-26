@@ -61,7 +61,7 @@ async function init() {
   // CRITICAL FIX #3: Show loading status
   showExtensionStatus('loading', 'Initializing protection...');
   
-  // Get settings with retry logic
+  // Get settings with retry logic - LONGER DELAYS for service worker initialization
   let settingsLoaded = false;
   let retries = 5;
   
@@ -84,9 +84,9 @@ async function init() {
       console.warn(`[APG] Settings load attempt failed (${6-retries}/5):`, error.message);
       
       if (retries > 0) {
-        // Exponential backoff: 200ms, 400ms, 800ms, 1600ms, 3200ms
-        const delay = 200 * Math.pow(2, 5 - retries);
-        console.log(`[APG] Retrying in ${delay}ms...`);
+        // LONGER delays: 1s, 2s, 3s, 4s, 5s (service worker needs time to initialize)
+        const delay = 1000 * (6 - retries);
+        console.log(`[APG] Retrying in ${delay}ms... (Service worker may still be initializing)`);
         await new Promise(resolve => setTimeout(resolve, delay));
       } else {
         console.warn('[APG] All retry attempts failed, using defaults');
