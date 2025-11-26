@@ -8,14 +8,79 @@ import { ErrorHandler } from './error-handler.js';
 import { WorkerManager } from './worker-manager.js';
 
 export class ThreatIntelligence {
+  // CRITICAL FIX #7: Rate limiting for PhishTank API
+  static _lastApiCall = 0;
+  static _apiCallCount = 0;
+  static _rateLimitWindow = 3600000; // 1 hour in ms
+  static _maxCallsPerHour = 10; // Conservative limit
+  
+  /**
+   * Check if we can make an API call (rate limiting)
+   * CRITICAL FIX #7: Prevents IP bans from excessive API calls
+   */
+  static canMakeApiCall() {
+    const now = Date.now();
+    const timeSinceLastCall = now - this._lastApiCall;
+    
+    // Reset counter if window has passed
+    if (timeSinceLastCall > this._rateLimitWindow) {
+      this._apiCallCount = 0;
+    }
+    
+    // Check if we've exceeded the limit
+    if (this._apiCallCount >= this._maxCallsPerHour) {
+      const timeUntilReset = this._rateLimitWindow - timeSinceLastCall;
+      const minutesUntilReset = Math.ceil(timeUntilReset / 60000);
+      console.warn(`[TI] Rate limit reached. Try again in ${minutesUntilReset} minutes`);
+      return false;
+    }
+    
+    // Enforce minimum delay between calls (6 minutes = 360000ms)
+    const minDelay = 360000;
+    if (timeSinceLastCall < minDelay) {
+      const waitTime = Math.ceil((minDelay - timeSinceLastCall) / 1000);
+      console.warn(`[TI] Rate limiting: Wait ${waitTime} seconds before next API call`);
+      return false;
+    }
+    
+    return true;
+  }
+  
+  /**
+   * Record an API call for rate limiting
+   */
+  static recordApiCall() {
+    this._lastApiCall = Date.now();
+    this._apiCallCount++;
+    console.log(`[TI] API call recorded (${this._apiCallCount}/${this._maxCallsPerHour} this hour)`);
+  }
+  
   /**
    * Download PhishTank database (FREE, no API key)
    * Updates daily with latest phishing URLs
+   * CRITICAL FIX #7: Now includes rate limiting
    */
   static async updatePhishTankDatabase() {
     return await ErrorHandler.safeAsync(
       async () => {
         console.log('[TI] Downloading PhishTank database...');
+        
+        // CRITICAL FIX #7: Check rate limit before making API call
+        if (!this.canMakeApiCall()) {
+          console.warn('[TI] Skipping update due to rate limit');
+          // Return existing database stats
+          const stats = await this.getDatabaseStats();
+          return {
+            success: true,
+            count: stats.count || 0,
+            timestamp: Date.now(),
+            rateLimited: true,
+            message: 'Update skipped due to rate limiting'
+          };
+        }
+        
+        // Record this API call
+        this.recordApiCall();
         
         // Try PhishTank API with CORS workaround
         // Note: PhishTank blocks direct CORS requests from extensions

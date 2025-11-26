@@ -156,13 +156,19 @@ function startMonitoring() {
 
 /**
  * Scan all links on the page
+ * CRITICAL FIX #6: Performance optimization with batching
  */
 function scanLinks() {
   const links = document.querySelectorAll('a[href]');
   
   console.log(`[APG] Scanning ${links.length} links on page`);
   
+  // CRITICAL FIX #6: Batch processing for large emails
+  const MAX_BATCH_SIZE = 20; // Process 20 links at a time
+  const BATCH_DELAY = 100; // 100ms delay between batches
+  
   let newLinksFound = 0;
+  const linksToProcess = [];
   
   links.forEach(link => {
     const url = link.href;
@@ -186,20 +192,52 @@ function scanLinks() {
     processedLinks.add(url);
     newLinksFound++;
 
-    console.log(`[APG] Processing link ${newLinksFound}:`, url.substring(0, 100));
-
-    // CRITICAL: Block link immediately while analyzing
-    preventClickDuringAnalysis(link);
-
-    // Analyze the link
-    analyzeAndMarkLink(link, url);
+    // Add to processing queue
+    linksToProcess.push({ link, url });
   });
   
   if (newLinksFound > 0) {
     console.log(`[APG] Found ${newLinksFound} new links to analyze`);
+    
+    // CRITICAL FIX #6: Process links in batches to prevent UI freezing
+    processBatchedLinks(linksToProcess, MAX_BATCH_SIZE, BATCH_DELAY);
   } else {
     console.log('[APG] No new links found in this scan');
   }
+}
+
+/**
+ * Process links in batches with delays
+ * CRITICAL FIX #6: Prevents UI freezing on large emails
+ */
+async function processBatchedLinks(linksToProcess, batchSize, delay) {
+  console.log(`[APG] Processing ${linksToProcess.length} links in batches of ${batchSize}`);
+  
+  for (let i = 0; i < linksToProcess.length; i += batchSize) {
+    const batch = linksToProcess.slice(i, i + batchSize);
+    const batchNum = Math.floor(i / batchSize) + 1;
+    const totalBatches = Math.ceil(linksToProcess.length / batchSize);
+    
+    console.log(`[APG] Processing batch ${batchNum}/${totalBatches} (${batch.length} links)`);
+    
+    // Process batch
+    batch.forEach(({ link, url }) => {
+      console.log(`[APG] Processing link:`, url.substring(0, 100));
+      
+      // CRITICAL: Block link immediately while analyzing
+      preventClickDuringAnalysis(link);
+      
+      // Analyze the link (async, non-blocking)
+      analyzeAndMarkLink(link, url);
+    });
+    
+    // Wait before next batch (except for last batch)
+    if (i + batchSize < linksToProcess.length) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  console.log('[APG] All batches processed');
 }
 
 /**
