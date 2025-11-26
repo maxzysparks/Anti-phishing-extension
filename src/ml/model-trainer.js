@@ -3,6 +3,7 @@
  * Trains the TensorFlow.js model with collected data
  */
 
+import * as tf from '@tensorflow/tfjs';
 import { tfManager } from './tensorflow-manager.js';
 import { TrainingDataCollector } from './training-data-collector.js';
 
