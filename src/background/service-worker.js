@@ -55,48 +55,53 @@ async function initializeTensorFlow() {
   }
 }
 
-// HYBRID STARTUP: Critical ML at startup, heavy components lazy
-console.log('[System] ⚡ HYBRID STARTUP MODE - Critical ML loads fast, heavy components on-demand');
-console.log('[System] Extension ready immediately!');
+// ⚡ ULTRA-FAST PARALLEL STARTUP: Everything loads simultaneously with optimizations
+console.log('[System] ⚡ ULTRA-FAST PARALLEL MODE - All components loading simultaneously!');
+console.log('[System] Extension ready immediately with optimized parallel initialization!');
 
-// Initialize CRITICAL components immediately (non-blocking, fast)
-setTimeout(() => {
-  console.log('[Startup] Initializing critical ML components...');
+// Start ALL components in parallel immediately (no delays, maximum speed)
+const startTime = Date.now();
+
+// Use Promise.allSettled for parallel execution without blocking
+Promise.allSettled([
+  // ML Components (parallel group 1)
+  initializeTensorFlow().then(() => console.log('[ML] ✓ TensorFlow ready')),
+  PatternDetector.initializeEnsemble().then(() => console.log('[ML] ✓ Ensemble ready')),
+  PatternDetector.initializeZeroDay().then(() => console.log('[ML] ✓ Zero-Day ready')),
+  PatternDetector.initializeLSTM().then(() => console.log('[ML] ✓ LSTM ready')),
   
-  // Priority 1: TensorFlow (needed for all ML)
-  initializeTensorFlow().then(() => {
-    console.log('[Startup] ✓ TensorFlow ready');
-    
-    // Priority 2: Ensemble Detector (highest accuracy, fast to load)
-    PatternDetector.initializeEnsemble().then(() => {
-      console.log('[Startup] ✓ Ensemble ready');
-    }).catch(err => {
-      console.warn('[Startup] Ensemble init failed:', err.message);
-    });
-    
-    // Priority 3: Zero-Day Detector (important for novel threats)
-    PatternDetector.initializeZeroDay().then(() => {
-      console.log('[Startup] ✓ Zero-Day detector ready');
-    }).catch(err => {
-      console.warn('[Startup] Zero-Day init failed:', err.message);
-    });
-    
-    // Priority 4: LSTM (temporal analysis)
-    PatternDetector.initializeLSTM().then(() => {
-      console.log('[Startup] ✓ LSTM ready');
-    }).catch(err => {
-      console.warn('[Startup] LSTM init failed:', err.message);
-    });
-    
-  }).catch(err => {
-    console.warn('[Startup] TF init failed:', err.message);
+  // Network Components (parallel group 2)
+  p2pThreatNetwork.initialize().then(r => r.success && console.log('[Network] ✓ P2P ready')),
+  distributedThreatDB.initialize().then(r => r.success && console.log('[Network] ✓ Distributed DB ready')),
+  new GraphNeuralNetwork().initialize().then(r => r.success && console.log('[Network] ✓ GNN ready')),
+  
+  // Production Components (parallel group 3)
+  new TelemetrySystem().initialize().then(r => r.success && console.log('[Production] ✓ Telemetry ready')),
+  new ProductionManager().initialize().then(r => r.success && console.log('[Production] ✓ Manager ready')),
+  
+  // Analytics Components (parallel group 4)
+  advancedAnalytics.initialize().then(r => r.success && console.log('[Analytics] ✓ Advanced ready')),
+  dbscanClustering.initialize().then(r => r.success && console.log('[Analytics] ✓ DBSCAN ready')),
+  new ThreatVisualizer().initialize().then(r => r.success && console.log('[Analytics] ✓ Visualizer ready'))
+]).then(results => {
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+  const successful = results.filter(r => r.status === 'fulfilled').length;
+  const failed = results.filter(r => r.status === 'rejected').length;
+  
+  console.log(`[System] ⚡ Parallel initialization complete in ${elapsed}s!`);
+  console.log(`[System] ✓ ${successful} components ready, ${failed} failed (non-critical)`);
+  
+  // Log any failures for debugging
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      console.warn(`[System] Component ${index} failed:`, result.reason?.message || 'Unknown error');
+    }
   });
-  
-  console.log('[Startup] Critical ML components loading... Heavy components will load on-demand');
-}, 500); // Start fast - only 500ms delay
+}).catch(err => {
+  console.error('[System] Initialization error:', err);
+});
 
-// Heavy components load on-demand (P2P, GNN, Analytics, etc.)
-console.log('[System] Heavy components (P2P, GNN, Analytics) will load when needed');
+console.log('[System] All components initializing in parallel - maximum speed mode!');
 
 // Initialize default settings on install
 chrome.runtime.onInstalled.addListener(async (details) => {
