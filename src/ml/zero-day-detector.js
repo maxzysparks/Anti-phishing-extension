@@ -712,15 +712,24 @@ export class ZeroDayDetector {
    */
   async loadLegitimatePatterns() {
     try {
+      // Check if chrome.storage is available
+      if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+        console.warn('[Zero-Day Detector] Chrome storage not available, using empty patterns');
+        return;
+      }
+      
       const stored = await chrome.storage.local.get('legitimatePatterns');
       
-      if (stored.legitimatePatterns) {
+      if (stored && stored.legitimatePatterns) {
         this.legitimatePatterns = new Map(Object.entries(stored.legitimatePatterns));
         console.log('[Zero-Day Detector] Loaded', this.legitimatePatterns.size, 'legitimate patterns');
+      } else {
+        console.log('[Zero-Day Detector] No stored patterns found, starting fresh');
       }
       
     } catch (error) {
-      console.error('[Zero-Day Detector] Failed to load patterns:', error);
+      console.warn('[Zero-Day Detector] Failed to load patterns (non-critical):', error.message);
+      // Continue with empty patterns - not critical for operation
     }
   }
 
@@ -730,12 +739,20 @@ export class ZeroDayDetector {
    */
   async saveLegitimatePatterns() {
     try {
+      // Check if chrome.storage is available
+      if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+        console.warn('[Zero-Day Detector] Chrome storage not available, skipping save');
+        return;
+      }
+      
       const patternsObj = Object.fromEntries(this.legitimatePatterns);
       await chrome.storage.local.set({
         legitimatePatterns: patternsObj
       });
+      console.log('[Zero-Day Detector] Saved', this.legitimatePatterns.size, 'patterns');
     } catch (error) {
-      console.error('[Zero-Day Detector] Failed to save patterns:', error);
+      console.warn('[Zero-Day Detector] Failed to save patterns (non-critical):', error.message);
+      // Continue without saving - not critical for operation
     }
   }
 
