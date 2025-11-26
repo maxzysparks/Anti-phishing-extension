@@ -2,6 +2,8 @@ import { PhishingDetector } from '../utils/phishing-detector.js';
 import { StorageManager } from '../utils/storage.js';
 import { ThreatIntelligence } from '../utils/threat-intelligence.js';
 import { tfManager } from '../ml/tensorflow-manager.js';
+import { ModelTrainer } from '../ml/model-trainer.js';
+import { TrainingDataCollector } from '../ml/training-data-collector.js';
 
 /**
  * Background service worker for the anti-phishing extension
@@ -119,6 +121,55 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     
     // Schedule automatic updates for future
     ThreatIntelligence.scheduleAutomaticUpdates();
+    
+    // AUTOMATIC ML TRAINING: Train model in background on first install
+    console.log('[ML Training] Starting automatic model training...');
+    setTimeout(async () => {
+      try {
+        // Initialize training data
+        const dataInit = await TrainingDataCollector.initializeTrainingData();
+        if (dataInit.success) {
+          console.log(`[ML Training] Training data ready: ${dataInit.count} samples`);
+          
+          // Train model (lightweight: 30 epochs, fast training)
+          console.log('[ML Training] Training neural network...');
+          const trainingResult = await ModelTrainer.trainModel({
+            epochs: 30,
+            batchSize: 16,
+            learningRate: 0.001
+          });
+          
+          if (trainingResult.success) {
+            const acc = (trainingResult.evaluation.finalAccuracy * 100).toFixed(1);
+            console.log(`[ML Training] ✓ Model trained successfully! Accuracy: ${acc}%`);
+            
+            // Save training metadata
+            await ModelTrainer.saveTrainingMetadata(trainingResult);
+            
+            // Show notification to user
+            try {
+              await chrome.notifications.create('ml-trained', {
+                type: 'basic',
+                iconUrl: '/icons/icon48.png',
+                title: '🤖 AI Model Trained',
+                message: `Neural network ready! Detection accuracy: ${acc}%`,
+                priority: 1
+              });
+              
+              setTimeout(() => chrome.notifications.clear('ml-trained'), 5000);
+            } catch (notifError) {
+              console.warn('[ML Training] Could not show training notification:', notifError);
+            }
+          } else {
+            console.warn('[ML Training] Training failed:', trainingResult.error);
+            console.log('[ML Training] Falling back to heuristic detection');
+          }
+        }
+      } catch (trainingError) {
+        console.warn('[ML Training] Training error (non-critical):', trainingError.message);
+        console.log('[ML Training] Extension will use heuristic detection');
+      }
+    }, 5000); // Start training 5 seconds after install (let other setup complete first)
   }
   
   // On update, check if database needs refresh
