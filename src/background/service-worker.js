@@ -22,6 +22,10 @@ import { ThreatVisualizer } from '../visualization/threat-visualizer.js';
 
 console.log('Anti-Phishing Guardian: Background service worker loaded');
 
+// CRITICAL: Set up message listener IMMEDIATELY before any initialization
+// This ensures content scripts can connect right away
+console.log('[System] Setting up message listener...');
+
 // Initialize TensorFlow.js on startup (with error recovery)
 // CRITICAL FIX: Wrap in try-catch and don't let TF errors crash service worker
 let tfInitialized = false;
@@ -58,6 +62,7 @@ async function initializeTensorFlow() {
 // ⚡ ULTRA-FAST PARALLEL STARTUP: Everything loads simultaneously with optimizations
 console.log('[System] ⚡ ULTRA-FAST PARALLEL MODE - All components loading simultaneously!');
 console.log('[System] Extension ready immediately with optimized parallel initialization!');
+console.log('[System] Message handlers active - content scripts can connect now!');
 
 // Start ALL components in parallel immediately (no delays, maximum speed)
 const startTime = Date.now();
