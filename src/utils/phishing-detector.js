@@ -13,9 +13,17 @@ import { THREAT_LEVELS, PHISHING_KEYWORDS, SPAM_INDICATORS, LEGITIMATE_DOMAINS, 
 export class PhishingDetector {
   /**
    * Analyze a URL for phishing threats
+   * CRITICAL FIX #5: Offline fallback support
    */
   static async analyzeLink(url, context) {
     try {
+      // CRITICAL FIX #5: Check if offline
+      const isOffline = !navigator.onLine;
+      
+      if (isOffline) {
+        console.warn('[APG] Offline mode detected - using cached data and heuristics only');
+      }
+      
       // Check cache first with age validation
       const cached = await StorageManager.getCachedThreat(url);
       if (cached && this.isCacheValid(cached)) {
@@ -26,7 +34,7 @@ export class PhishingDetector {
           // Re-analyze dangerous links after 1 hour, suspicious after 6 hours
           const maxAge = cached.threatLevel === THREAT_LEVELS.DANGEROUS ? 3600000 : 21600000;
           
-          if (cacheAge > maxAge) {
+          if (cacheAge > maxAge && !isOffline) {
             console.log('[APG] Re-analyzing cached threat due to age:', url);
             // Don't return cached, continue to full analysis
           } else {
@@ -45,8 +53,8 @@ export class PhishingDetector {
       const isLegitimate = this.isLegitimateService(domain);
       
       if (isLegitimate || await StorageManager.isWhitelisted(domain)) {
-        // SECURITY: Verify domain still resolves and has valid certificate
-        const isStillSafe = await this.verifyWhitelistedDomain(domain);
+        // SECURITY: Verify domain still resolves and has valid certificate (skip if offline)
+        const isStillSafe = isOffline ? true : await this.verifyWhitelistedDomain(domain);
         
         if (!isStillSafe && !isLegitimate) {
           console.warn('[APG] Whitelisted domain failed verification:', domain);
@@ -62,7 +70,8 @@ export class PhishingDetector {
             isWhitelisted: true,
             isLegitimate: isLegitimate,
             timestamp: Date.now(),
-            verified: true
+            verified: !isOffline,
+            offline: isOffline
           };
           await StorageManager.cacheThreat(url, result);
           return result;
@@ -77,39 +86,44 @@ export class PhishingDetector {
           threatLevel: THREAT_LEVELS.DANGEROUS,
           issues: [{ type: 'blacklisted', severity: 'high', message: 'Domain is in your blacklist' }],
           isBlacklisted: true,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          offline: isOffline
         };
         await StorageManager.cacheThreat(url, result);
         await StorageManager.incrementBlocked();
         return result;
       }
 
-      // ENHANCED: Check PhishTank threat intelligence database
-      const phishTankResult = await ThreatIntelligence.checkPhishTank(url);
-      if (phishTankResult.found) {
-        const result = {
-          url,
-          domain,
-          threatLevel: THREAT_LEVELS.DANGEROUS,
-          issues: [{
-            type: 'phishtank_match',
-            severity: 'high',
-            message: `Known phishing site (verified by ${phishTankResult.source}${phishTankResult.verified ? ' - VERIFIED' : ''})`
-          }],
-          isPhishTankMatch: true,
-          phishTankVerified: phishTankResult.verified,
-          timestamp: Date.now()
-        };
-        await StorageManager.cacheThreat(url, result);
-        await StorageManager.incrementBlocked();
-        
-        // Show immediate notification for PhishTank matches
-        await NotificationManager.showThreatBlocked(url, result.threatLevel, 1);
-        
-        return result;
+      // CRITICAL FIX #5: Skip PhishTank check if offline
+      if (!isOffline) {
+        // ENHANCED: Check PhishTank threat intelligence database
+        const phishTankResult = await ThreatIntelligence.checkPhishTank(url);
+        if (phishTankResult.found) {
+          const result = {
+            url,
+            domain,
+            threatLevel: THREAT_LEVELS.DANGEROUS,
+            issues: [{
+              type: 'phishtank_match',
+              severity: 'high',
+              message: `Known phishing site (verified by ${phishTankResult.source}${phishTankResult.verified ? ' - VERIFIED' : ''})`
+            }],
+            isPhishTankMatch: true,
+            phishTankVerified: phishTankResult.verified,
+            timestamp: Date.now(),
+            offline: false
+          };
+          await StorageManager.cacheThreat(url, result);
+          await StorageManager.incrementBlocked();
+          
+          // Show immediate notification for PhishTank matches
+          await NotificationManager.showThreatBlocked(url, result.threatLevel, 1);
+          
+          return result;
+        }
       }
 
-      // Perform local analysis
+      // Perform local analysis (works offline)
       const analysis = analyzeURL(url);
       
       // ENHANCED: ML pattern detection
@@ -177,9 +191,19 @@ export class PhishingDetector {
       
       // Store context score for threat calculation
       analysis.contextScore = contextScore;
+      analysis.offline = isOffline;
 
       // Update threat level based on all factors
       analysis.threatLevel = this.calculateFinalThreatLevel(analysis);
+      
+      // Add offline warning if applicable
+      if (isOffline) {
+        analysis.issues.push({
+          type: 'offline_analysis',
+          severity: 'low',
+          message: 'Analysis performed offline - limited threat intelligence available'
+        });
+      }
 
       // Cache the result
       await StorageManager.cacheThreat(url, analysis);
