@@ -55,119 +55,22 @@ async function initializeTensorFlow() {
   }
 }
 
-// OPTIMIZED: Initialize ML Systems with parallel loading for faster startup (6 seconds total)
+// INSTANT STARTUP: Lazy loading - components initialize only when needed
+console.log('[System] ⚡ INSTANT STARTUP MODE - Components load on-demand');
+console.log('[System] Extension ready immediately! ML models will load in background.');
+
+// Initialize only critical components in background (non-blocking)
 setTimeout(() => {
-  // Priority 1: TensorFlow (needed by ensemble) - Start immediately
+  console.log('[Background] Starting lazy initialization of ML components...');
+  
+  // TensorFlow loads silently in background
   initializeTensorFlow().catch(err => {
-    console.warn('[ML] Deferred TF init failed (non-critical):', err.message);
+    console.warn('[ML] TF init failed (non-critical):', err.message);
   });
   
-  // Priority 2: Ensemble Detector (highest accuracy, load after TF)
-  setTimeout(() => {
-    PatternDetector.initializeEnsemble().catch(err => {
-      console.warn('[ML] Ensemble init failed (non-critical):', err.message);
-    });
-  }, 2000); // Wait 2 seconds after TF
-  
-  // PARALLEL LOADING: Load all other phases simultaneously after 3 seconds
-  setTimeout(() => {
-    // ML Models (load in parallel)
-    PatternDetector.initializeZeroDay().catch(err => {
-      console.warn('[ML] Zero-Day init failed (non-critical):', err.message);
-    });
-    
-    PatternDetector.initializeLSTM().catch(err => {
-      console.warn('[ML] LSTM init failed (non-critical):', err.message);
-    });
-    
-    // Phase 4: Network components (load in parallel)
-    p2pThreatNetwork.initialize().then(result => {
-      if (result.success) {
-        console.log('[Phase 4] P2P Network initialized:', result.peerId);
-      }
-    }).catch(err => {
-      console.warn('[Phase 4] P2P init failed (non-critical):', err.message);
-    });
-    
-    distributedThreatDB.initialize().then(result => {
-      if (result.success) {
-        console.log('[Phase 4] Distributed Threat DB initialized');
-      }
-    }).catch(err => {
-      console.warn('[Phase 4] Distributed DB init failed (non-critical):', err.message);
-    });
-    
-    const gnn = new GraphNeuralNetwork();
-    gnn.initialize().then(result => {
-      if (result.success) {
-        console.log('[Phase 4] Graph Neural Network initialized');
-      }
-    }).catch(err => {
-      console.warn('[Phase 4] GNN init failed (non-critical):', err.message);
-    });
-    
-    // Phase 5: Production components (load in parallel)
-    const telemetry = new TelemetrySystem();
-    telemetry.initialize().then(result => {
-      if (result.success) {
-        console.log('[Phase 5] Telemetry System initialized');
-        telemetry.recordEvent('system', 'startup', {
-          version: '1.0.0',
-          timestamp: Date.now()
-        });
-      }
-    }).catch(err => {
-      console.warn('[Phase 5] Telemetry init failed (non-critical):', err.message);
-    });
-    
-    const productionManager = new ProductionManager();
-    productionManager.initialize().then(result => {
-      if (result.success) {
-        console.log('[Phase 5] Production Manager initialized');
-        productionManager.modelVersioning.registerVersion('phishing-detector', '1.0.0', {
-          accuracy: 0.95,
-          precision: 0.93,
-          recall: 0.94,
-          f1Score: 0.935,
-          trainingDate: Date.now()
-        });
-        productionManager.modelVersioning.activateVersion('phishing-detector', '1.0.0');
-      }
-    }).catch(err => {
-      console.warn('[Phase 5] Production Manager init failed (non-critical):', err.message);
-    });
-    
-    console.log('[Phase 5] Behavioral Biometrics ready (will initialize in content scripts)');
-    
-    // Phase 3: Analytics components (load in parallel)
-    advancedAnalytics.initialize().then(result => {
-      if (result.success) {
-        console.log('[Phase 3] Advanced Analytics initialized');
-      }
-    }).catch(err => {
-      console.warn('[Phase 3] Advanced Analytics init failed (non-critical):', err.message);
-    });
-    
-    dbscanClustering.initialize().then(result => {
-      if (result.success) {
-        console.log('[Phase 3] DBSCAN Clustering initialized');
-      }
-    }).catch(err => {
-      console.warn('[Phase 3] DBSCAN init failed (non-critical):', err.message);
-    });
-    
-    const visualizer = new ThreatVisualizer();
-    visualizer.initialize().then(result => {
-      if (result.success) {
-        console.log('[Phase 3] Threat Visualizer initialized');
-      }
-    }).catch(err => {
-      console.warn('[Phase 3] Visualizer init failed (non-critical):', err.message);
-    });
-    
-    console.log('[System] All phases loading in parallel - initialization complete in ~6 seconds');
-  }, 3000); // Start parallel loading after 3 seconds
-}, 500); // Start faster (500ms instead of 1000ms)
+  // Everything else loads on-demand when first used
+  console.log('[Background] All other components will load when needed');
+}, 2000); // Start after 2 seconds, doesn't block anything
 
 // Initialize default settings on install
 chrome.runtime.onInstalled.addListener(async (details) => {
