@@ -10,6 +10,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadLists();
   await loadSettings();
   initializeEventListeners();
+  
+  // Auto-refresh dashboard every 5 seconds
+  setInterval(async () => {
+    await loadDashboard();
+  }, 5000);
 });
 
 // Tab Management
