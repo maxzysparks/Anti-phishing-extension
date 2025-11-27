@@ -11,6 +11,55 @@ let processedLinks = new Set();
 let extensionActive = false;
 let connectionPort = null;
 
+// Platform detection
+const PLATFORM = detectPlatform();
+console.log('[APG] Detected platform:', PLATFORM);
+
+// Platform-specific selectors
+const SELECTORS = {
+  gmail: {
+    emailBody: '[role="main"]',
+    emailBodyAlt: '.nH',
+    emailContainer: '[role="article"]',
+    emailContainerAlt: '[data-message-id]',
+    subject: '[data-legacy-thread-id] h2',
+    subjectAlt: '[role="heading"]'
+  },
+  outlook: {
+    emailBody: '[role="main"]',
+    emailBodyAlt: '.customScrollBar',
+    emailContainer: '[role="article"]',
+    emailContainerAlt: '[aria-label*="message"]',
+    subject: '[role="heading"]',
+    subjectAlt: 'h2[class*="subject"]'
+  }
+};
+
+/**
+ * Detect which email platform we're on
+ */
+function detectPlatform() {
+  const url = window.location.href.toLowerCase();
+  
+  if (url.includes('mail.google.com')) {
+    return 'gmail';
+  } else if (url.includes('outlook.live.com') || 
+             url.includes('outlook.office.com') || 
+             url.includes('outlook.office365.com')) {
+    return 'outlook';
+  }
+  
+  return 'unknown';
+}
+
+/**
+ * Get platform-specific selector
+ */
+function getSelector(type) {
+  const platformSelectors = SELECTORS[PLATFORM] || SELECTORS.gmail;
+  return platformSelectors[type] || '';
+}
+
 // CRITICAL FIX #5: Debouncing to prevent race conditions
 let scanTimeout = null;
 let isScanningInProgress = false;
@@ -144,19 +193,22 @@ async function init() {
 /**
  * Start monitoring for links
  * CRITICAL FIX #5: Enhanced with debouncing to prevent race conditions
+ * OUTLOOK SUPPORT: Platform-specific email detection
  */
 function startMonitoring() {
-  console.log('[APG] startMonitoring called');
+  console.log('[APG] startMonitoring called for platform:', PLATFORM);
   
-  // Wait for Gmail to load
-  const checkGmailLoaded = setInterval(() => {
-    const emailBody = document.querySelector('[role="main"]') || 
-                      document.querySelector('.nH') ||
+  // Wait for email interface to load (Gmail or Outlook)
+  const checkEmailLoaded = setInterval(() => {
+    // Try platform-specific selectors first, then fallback
+    const emailBody = document.querySelector(getSelector('emailBody')) || 
+                      document.querySelector(getSelector('emailBodyAlt')) ||
+                      document.querySelector('[role="main"]') ||
                       document.body;
     
     if (emailBody) {
-      console.log('[APG] Gmail interface detected, starting scan');
-      clearInterval(checkGmailLoaded);
+      console.log(`[APG] ${PLATFORM} interface detected, starting scan`);
+      clearInterval(checkEmailLoaded);
       
       // Scan existing links
       debouncedScanLinks();
@@ -172,14 +224,14 @@ function startMonitoring() {
         subtree: true
       });
 
-      console.log('[APG] Link monitoring started successfully with debouncing');
+      console.log(`[APG] Link monitoring started successfully for ${PLATFORM} with debouncing`);
     }
   }, 500);
   
   // Timeout after 10 seconds
   setTimeout(() => {
-    clearInterval(checkGmailLoaded);
-    console.log('[APG] Gmail load timeout, starting anyway');
+    clearInterval(checkEmailLoaded);
+    console.log(`[APG] ${PLATFORM} load timeout, starting anyway`);
     debouncedScanLinks();
   }, 10000);
 }
@@ -365,15 +417,19 @@ function removeAnalyzingIndicator(linkElement) {
 
 /**
  * Get email context around link for spam analysis
+ * OUTLOOK SUPPORT: Platform-specific email container detection
  */
 function getEmailContext(linkElement) {
   // Get surrounding text (300 chars before and after)
   let context = '';
   
-  // Try to get the email body
-  const emailBody = linkElement.closest('[role="article"]') || 
+  // Try to get the email body using platform-specific selectors
+  const emailBody = linkElement.closest(getSelector('emailContainer')) || 
+                    linkElement.closest(getSelector('emailContainerAlt')) ||
+                    linkElement.closest('[role="article"]') || 
                     linkElement.closest('.email-body') ||
                     linkElement.closest('[data-message-id]') ||
+                    linkElement.closest('[aria-label*="message"]') ||
                     linkElement.closest('.message-content');
   
   if (emailBody) {
@@ -389,20 +445,29 @@ function getEmailContext(linkElement) {
   // Get link text itself
   const linkText = linkElement.textContent || '';
   
-  // Get email subject if available
+  // Get email subject if available using platform-specific selectors
   let subject = '';
-  const subjectElement = document.querySelector('[data-legacy-thread-id] h2') ||
+  const subjectElement = document.querySelector(getSelector('subject')) ||
+                         document.querySelector(getSelector('subjectAlt')) ||
+                         document.querySelector('[data-legacy-thread-id] h2') ||
                          document.querySelector('.subject') ||
                          document.querySelector('[role="heading"]');
   if (subjectElement) {
     subject = subjectElement.textContent || '';
   }
   
+  console.log(`[APG] Email context extracted for ${PLATFORM}:`, {
+    subjectLength: subject.length,
+    contextLength: context.length,
+    linkTextLength: linkText.length
+  });
+  
   return {
     surrounding: context.toLowerCase(),
     linkText: linkText.toLowerCase(),
     subject: subject.toLowerCase(),
-    fullContext: (subject + ' ' + linkText + ' ' + context).toLowerCase()
+    fullContext: (subject + ' ' + linkText + ' ' + context).toLowerCase(),
+    platform: PLATFORM
   };
 }
 
