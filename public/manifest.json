@@ -16,7 +16,10 @@
     "https://outlook.office365.com/*",
     "https://data.phishtank.com/*",
     "https://cdn.phishtank.com/*",
-    "https://*.phishtank.com/*"
+    "https://*.phishtank.com/*",
+    "https://api.allorigins.win/*",
+    "https://corsproxy.io/*",
+    "https://cors-anywhere.herokuapp.com/*"
   ],
   "background": {
     "service_worker": "background.js"

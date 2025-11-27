@@ -88,21 +88,18 @@ export class ThreatIntelligence {
         const maxRetries = 3;
         
         // CRITICAL FIX #15: Try multiple methods to bypass CORS
+        // Chrome extensions can bypass CORS with proper host_permissions
         const downloadMethods = [
-          // Method 1: Try direct access (works if CORS is enabled)
+          // Method 1: Direct access (Chrome extensions bypass CORS with host_permissions)
           {
-            name: 'Direct',
-            url: 'https://data.phishtank.com/data/online-valid.json'
-          },
-          // Method 2: Use CORS proxy (allorigins.win - free, no API key)
-          {
-            name: 'CORS Proxy (AllOrigins)',
-            url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://data.phishtank.com/data/online-valid.json')
-          },
-          // Method 3: Use alternative CORS proxy (corsproxy.io)
-          {
-            name: 'CORS Proxy (CorsProxy)',
-            url: 'https://corsproxy.io/?' + encodeURIComponent('https://data.phishtank.com/data/online-valid.json')
+            name: 'Direct (Chrome Extension)',
+            url: 'https://data.phishtank.com/data/online-valid.json',
+            options: {
+              method: 'GET',
+              headers: {
+                'Accept': 'application/json'
+              }
+            }
           }
         ];
         
@@ -114,10 +111,7 @@ export class ThreatIntelligence {
               console.log(`[TI] ${method.name} attempt ${attempt}/${maxRetries}...`);
               
               const res = await fetch(method.url, {
-                method: 'GET',
-                headers: {
-                  'Accept': 'application/json'
-                },
+                ...method.options,
                 signal: AbortSignal.timeout(30000) // 30 second timeout
               });
               
