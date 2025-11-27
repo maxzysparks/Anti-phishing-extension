@@ -39,10 +39,10 @@ function initializeTabs() {
 // Dashboard Functions
 async function loadDashboard() {
   try {
-    // Load statistics
-    const response = await chrome.runtime.sendMessage({ action: 'getStats' });
+    // Load statistics with retry logic
+    const response = await sendMessageWithRetry({ action: 'getStats' }, 3);
     
-    if (response.success) {
+    if (response && response.success) {
       const stats = response.data;
       document.getElementById('links-scanned').textContent = stats.linksScanned || 0;
       document.getElementById('threats-blocked').textContent = stats.threatsBlocked || 0;
@@ -51,13 +51,26 @@ async function loadDashboard() {
         ? ((stats.threatsBlocked / stats.linksScanned) * 100).toFixed(1) 
         : 0;
       document.getElementById('protection-rate').textContent = `${rate}%`;
+    } else {
+      // Fallback to direct storage access
+      const stats = await chrome.storage.local.get('stats');
+      if (stats.stats) {
+        document.getElementById('links-scanned').textContent = stats.stats.linksScanned || 0;
+        document.getElementById('threats-blocked').textContent = stats.stats.threatsBlocked || 0;
+        
+        const rate = stats.stats.linksScanned > 0 
+          ? ((stats.stats.threatsBlocked / stats.stats.linksScanned) * 100).toFixed(1) 
+          : 0;
+        document.getElementById('protection-rate').textContent = `${rate}%`;
+      }
     }
 
     // Load database stats
     await updateDatabaseStatus();
   } catch (error) {
     console.error('Error loading dashboard:', error);
-    showToast('Failed to load dashboard', 'error');
+    // Don't show error toast on initial load, just log it
+    console.warn('Dashboard will retry loading...');
   }
 }
 
@@ -188,9 +201,9 @@ async function removeDomain(domain, type) {
 // Settings Management
 async function loadSettings() {
   try {
-    const response = await chrome.runtime.sendMessage({ action: 'getSettings' });
+    const response = await sendMessageWithRetry({ action: 'getSettings' }, 3);
     
-    if (response.success) {
+    if (response && response.success) {
       const settings = response.data;
       
       // Load notification settings
@@ -201,6 +214,18 @@ async function loadSettings() {
       // Load protection level
       const protectionLevel = settings.protectionLevel || 'strict';
       document.querySelector(`input[name="protection"][value="${protectionLevel}"]`).checked = true;
+    } else {
+      // Fallback to direct storage access
+      const result = await chrome.storage.local.get('settings');
+      if (result.settings) {
+        const settings = result.settings;
+        document.getElementById('notify-dangerous').checked = settings.notifyDangerous !== false;
+        document.getElementById('notify-suspicious').checked = settings.notifySuspicious === true;
+        document.getElementById('notify-updates').checked = settings.notifyUpdates !== false;
+        
+        const protectionLevel = settings.protectionLevel || 'strict';
+        document.querySelector(`input[name="protection"][value="${protectionLevel}"]`).checked = true;
+      }
     }
   } catch (error) {
     console.error('Error loading settings:', error);
@@ -661,6 +686,30 @@ function validateStatsObject(stats) {
     valid: Object.keys(validStats).length > 0,
     data: validStats
   };
+}
+
+/**
+ * Send message with retry logic
+ * Handles service worker connection issues
+ */
+async function sendMessageWithRetry(message, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await chrome.runtime.sendMessage(message);
+      return response;
+    } catch (error) {
+      console.warn(`Message attempt ${i + 1}/${maxRetries} failed:`, error.message);
+      
+      if (i < maxRetries - 1) {
+        // Wait before retry (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, 500 * (i + 1)));
+      } else {
+        console.error('All message attempts failed:', error);
+        return null;
+      }
+    }
+  }
+  return null;
 }
 
 // Toast Notifications
