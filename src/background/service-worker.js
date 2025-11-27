@@ -14,6 +14,7 @@ import { ProductionManager } from '../production/production-suite.js';
 import { advancedAnalytics } from '../analytics/advanced-analytics.js';
 import { dbscanClustering } from '../analytics/dbscan-clustering.js';
 import { ThreatVisualizer } from '../visualization/threat-visualizer.js';
+import { performanceMonitor } from '../utils/performance-monitor.js';
 
 /**
  * Background service worker for the anti-phishing extension
@@ -117,6 +118,17 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     await StorageManager.saveSettings({});
     console.log('Default settings initialized');
     
+    // CRITICAL FIX #11: Open onboarding page on first install
+    try {
+      await chrome.tabs.create({
+        url: chrome.runtime.getURL('src/onboarding/onboarding.html'),
+        active: true
+      });
+      console.log('[Onboarding] Opened welcome page');
+    } catch (onboardingError) {
+      console.error('[Onboarding] Failed to open welcome page:', onboardingError);
+    }
+    
     // CRITICAL FIX #1: Immediately download database on first install
     console.log('[Install] Starting immediate PhishTank database download...');
     
@@ -125,7 +137,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       await chrome.notifications.create('setup-in-progress', {
         type: 'basic',
         iconUrl: '/icons/icon48.png',
-        title: '🛡️ Anti-Phishing Guardian',
+        title: 'Anti-Phishing Guardian',
         message: 'Setting up protection... Downloading threat database.',
         priority: 2
       });
@@ -145,7 +157,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         await chrome.notifications.create('setup-complete', {
           type: 'basic',
           iconUrl: '/icons/icon48.png',
-          title: '✅ Protection Active',
+          title: 'Protection Active',
           message: `Ready! Monitoring ${downloadResult.count.toLocaleString()} known phishing threats.`,
           priority: 1
         });
@@ -166,7 +178,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         await chrome.notifications.create('setup-failed', {
           type: 'basic',
           iconUrl: '/icons/icon48.png',
-          title: '⚠️ Setup Issue',
+          title: 'Setup Issue',
           message: 'Using fallback protection. Check your internet connection.',
           priority: 2
         });
@@ -207,7 +219,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
               await chrome.notifications.create('ml-trained', {
                 type: 'basic',
                 iconUrl: '/icons/icon48.png',
-                title: '🤖 AI Model Trained',
+                title: 'AI Model Trained',
                 message: `Neural network ready! Detection accuracy: ${acc}%`,
                 priority: 1
               });
@@ -312,7 +324,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     'updateSettings',
     'getStats',
     'clearCache',
-    'updateDatabase'
+    'updateDatabase',
+    'submitFeedback', // CRITICAL FIX #9: User feedback
+    'getPerformanceStats' // CRITICAL FIX #12: Performance monitoring
   ];
   
   if (!ALLOWED_ACTIONS.includes(request.action)) {
@@ -371,6 +385,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       handleUpdateDatabase(sendResponse);
       return true;
 
+    case 'submitFeedback':
+      handleSubmitFeedback(sanitizedRequest.feedback, sendResponse);
+      return true;
+
+    case 'getPerformanceStats':
+      handleGetPerformanceStats(sendResponse);
+      return true;
+
     default:
       // This should never happen due to whitelist check above
       console.error('[Security] Unexpected action bypass:', sanitizedRequest.action);
@@ -410,6 +432,51 @@ function sanitizeMessageData(request) {
   if (request.settings && typeof request.settings === 'object') {
     // Only allow expected settings fields
     sanitized.settings = sanitizeSettings(request.settings);
+  }
+  
+  // CRITICAL FIX #9: Sanitize feedback data
+  if (request.feedback && typeof request.feedback === 'object') {
+    sanitized.feedback = sanitizeFeedback(request.feedback);
+  }
+  
+  return sanitized;
+}
+
+/**
+ * Sanitize feedback data
+ * CRITICAL FIX #9: Security for user feedback
+ */
+function sanitizeFeedback(feedback) {
+  if (!feedback || typeof feedback !== 'object') return null;
+  
+  const sanitized = {
+    url: sanitizeURL(feedback.url),
+    domain: sanitizeDomain(feedback.domain),
+    detectedThreatLevel: String(feedback.detectedThreatLevel || '').substring(0, 20),
+    feedbackType: String(feedback.feedbackType || '').substring(0, 20),
+    timestamp: typeof feedback.timestamp === 'number' ? feedback.timestamp : Date.now()
+  };
+  
+  // Validate feedback type
+  if (!['correct', 'incorrect'].includes(sanitized.feedbackType)) {
+    return null;
+  }
+  
+  // Optionally include issues and scores (sanitized)
+  if (Array.isArray(feedback.issues)) {
+    sanitized.issues = feedback.issues.slice(0, 20).map(issue => ({
+      type: String(issue.type || '').substring(0, 50),
+      severity: String(issue.severity || '').substring(0, 20),
+      message: String(issue.message || '').substring(0, 200)
+    }));
+  }
+  
+  if (typeof feedback.mlScore === 'number') {
+    sanitized.mlScore = feedback.mlScore;
+  }
+  
+  if (typeof feedback.confidence === 'number') {
+    sanitized.confidence = feedback.confidence;
   }
   
   return sanitized;
@@ -638,6 +705,83 @@ async function handleUpdateDatabase(sendResponse) {
   }
 }
 
+/**
+ * Handle get performance stats request
+ * CRITICAL FIX #12: Performance monitoring
+ */
+async function handleGetPerformanceStats(sendResponse) {
+  try {
+    await performanceMonitor.loadMetrics();
+    const stats = performanceMonitor.getStats();
+    const memory = await performanceMonitor.getMemoryUsage();
+    
+    sendResponse({ 
+      success: true, 
+      data: {
+        ...stats,
+        memory
+      }
+    });
+  } catch (error) {
+    console.error('[Performance] Error getting stats:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handle user feedback submission
+ * CRITICAL FIX #9: Store feedback for ML improvement
+ */
+async function handleSubmitFeedback(feedback, sendResponse) {
+  try {
+    if (!feedback) {
+      sendResponse({ success: false, error: 'Invalid feedback data' });
+      return;
+    }
+    
+    console.log('[Feedback] Received:', feedback.feedbackType, 'for', feedback.url);
+    
+    // Get existing feedback from storage
+    const result = await chrome.storage.local.get('userFeedback');
+    const feedbackList = result.userFeedback || [];
+    
+    // Add new feedback
+    feedbackList.push(feedback);
+    
+    // Limit storage to last 1000 feedback entries
+    const MAX_FEEDBACK = 1000;
+    if (feedbackList.length > MAX_FEEDBACK) {
+      feedbackList.splice(0, feedbackList.length - MAX_FEEDBACK);
+    }
+    
+    // Save to storage
+    await chrome.storage.local.set({ userFeedback: feedbackList });
+    
+    console.log(`[Feedback] Stored successfully. Total feedback: ${feedbackList.length}`);
+    
+    // Update statistics
+    const stats = await StorageManager.getStats();
+    const feedbackStats = stats.feedbackStats || { correct: 0, incorrect: 0 };
+    
+    if (feedback.feedbackType === 'correct') {
+      feedbackStats.correct++;
+    } else if (feedback.feedbackType === 'incorrect') {
+      feedbackStats.incorrect++;
+    }
+    
+    await StorageManager.updateStats({ feedbackStats });
+    
+    sendResponse({ 
+      success: true, 
+      message: 'Feedback recorded',
+      totalFeedback: feedbackList.length
+    });
+  } catch (error) {
+    console.error('[Feedback] Error storing feedback:', error);
+    sendResponse({ success: false, error: 'Failed to store feedback' });
+  }
+}
+
 // CRITICAL FIX #2: Service Worker Error Recovery and Health Monitoring
 let serviceWorkerHealthy = true;
 let lastHealthCheck = Date.now();
@@ -707,7 +851,7 @@ async function attemptRecovery() {
         await chrome.notifications.create('critical-error', {
           type: 'basic',
           iconUrl: '/icons/icon48.png',
-          title: '🚨 Protection Error',
+          title: 'Protection Error',
           message: 'Extension needs attention. Please reload the extension or restart your browser.',
           priority: 2,
           requireInteraction: true
@@ -735,7 +879,12 @@ function setupKeepAlive() {
     periodInMinutes: 1 // Ping every minute
   });
   
-  console.log('[Service Worker] Keep-alive alarm created');
+  // CRITICAL FIX #2: Add periodic cache cleanup alarm
+  chrome.alarms.create('cacheCleanup', {
+    periodInMinutes: 30 // Clean cache every 30 minutes
+  });
+  
+  console.log('[Service Worker] Keep-alive and cache cleanup alarms created');
 }
 
 // Listen for alarm to keep service worker active
@@ -759,6 +908,36 @@ chrome.alarms.onAlarm.addListener((alarm) => {
       if (consecutiveErrors >= 3) {
         attemptRecovery();
       }
+    });
+  } else if (alarm.name === 'cacheCleanup') {
+    // CRITICAL FIX #2: Periodic cache cleanup to prevent memory leaks
+    console.log('[Service Worker] Running periodic cache cleanup...');
+    
+    StorageManager.cleanupCache().then(result => {
+      if (result.cleaned > 0) {
+        console.log(`[Service Worker] Cache cleanup: Removed ${result.cleaned} expired entries, ${result.remaining} remaining`);
+      } else {
+        console.log(`[Service Worker] Cache cleanup: No expired entries, ${result.remaining} entries healthy`);
+      }
+    }).catch(err => {
+      console.error('[Service Worker] Cache cleanup failed:', err);
+    });
+    
+    // Also get cache statistics for monitoring
+    StorageManager.getCacheStats().then(stats => {
+      console.log('[Service Worker] Cache stats:', stats);
+      
+      // Warn if cache is getting large
+      if (stats.total > 400) {
+        console.warn(`[Service Worker] Cache size warning: ${stats.total} entries (limit: 500)`);
+      }
+      
+      // Warn if many expired entries
+      if (stats.expired > 50) {
+        console.warn(`[Service Worker] ${stats.expired} expired entries detected, cleanup recommended`);
+      }
+    }).catch(err => {
+      console.error('[Service Worker] Failed to get cache stats:', err);
     });
   }
 });

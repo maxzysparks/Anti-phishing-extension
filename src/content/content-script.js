@@ -11,6 +11,11 @@ let processedLinks = new Set();
 let extensionActive = false;
 let connectionPort = null;
 
+// CRITICAL FIX #5: Debouncing to prevent race conditions
+let scanTimeout = null;
+let isScanningInProgress = false;
+let pendingScan = false;
+
 // CRITICAL FIX #3: User Feedback - Show extension status
 function showExtensionStatus(status, message) {
   // Remove existing status indicator
@@ -38,7 +43,7 @@ function showExtensionStatus(status, message) {
     transition: opacity 0.3s;
   `;
   
-  const icon = status === 'active' ? '🛡️' : status === 'loading' ? '⏳' : '⚠️';
+  const icon = status === 'active' ? '[OK]' : status === 'loading' ? '[...]' : '[!]';
   indicator.innerHTML = `<span style="font-size: 16px;">${icon}</span><span>${message}</span>`;
   
   document.body.appendChild(indicator);
@@ -81,17 +86,27 @@ async function init() {
       }
     } catch (error) {
       retries--;
-      console.warn(`[APG] Settings load attempt failed (${6-retries}/5):`, error.message);
+      
+      // Only log warnings after first 2 attempts (service worker needs time to start)
+      if (retries <= 3) {
+        console.warn(`[APG] Settings load attempt failed (${6-retries}/5):`, error.message);
+      } else {
+        console.log(`[APG] Waiting for service worker... (attempt ${6-retries}/5)`);
+      }
       
       if (retries > 0) {
         // LONGER delays: 1s, 2s, 3s, 4s, 5s (service worker needs time to initialize)
         const delay = 1000 * (6 - retries);
-        console.log(`[APG] Retrying in ${delay}ms... (Service worker may still be initializing)`);
+        if (retries <= 3) {
+          console.log(`[APG] Retrying in ${delay}ms... (Service worker may still be initializing)`);
+        }
         await new Promise(resolve => setTimeout(resolve, delay));
       } else {
         console.warn('[APG] All retry attempts failed, using defaults');
+        console.warn('[APG] This may happen if the extension was just installed or reloaded');
+        console.warn('[APG] Try refreshing the page (F5) to reconnect');
         settings = { enabled: true };
-        showExtensionStatus('error', 'Using default settings');
+        showExtensionStatus('error', 'Using default settings - Refresh page to reconnect');
       }
     }
   }
@@ -128,6 +143,7 @@ async function init() {
 
 /**
  * Start monitoring for links
+ * CRITICAL FIX #5: Enhanced with debouncing to prevent race conditions
  */
 function startMonitoring() {
   console.log('[APG] startMonitoring called');
@@ -143,12 +159,12 @@ function startMonitoring() {
       clearInterval(checkGmailLoaded);
       
       // Scan existing links
-      scanLinks();
+      debouncedScanLinks();
 
-      // Watch for new links being added
+      // Watch for new links being added with debouncing
       const observer = new MutationObserver((mutations) => {
-        console.log('[APG] DOM mutation detected, rescanning...');
-        scanLinks();
+        console.log('[APG] DOM mutation detected, scheduling debounced scan...');
+        debouncedScanLinks();
       });
 
       observer.observe(emailBody, {
@@ -156,7 +172,7 @@ function startMonitoring() {
         subtree: true
       });
 
-      console.log('[APG] Link monitoring started successfully');
+      console.log('[APG] Link monitoring started successfully with debouncing');
     }
   }, 500);
   
@@ -164,15 +180,46 @@ function startMonitoring() {
   setTimeout(() => {
     clearInterval(checkGmailLoaded);
     console.log('[APG] Gmail load timeout, starting anyway');
-    scanLinks();
+    debouncedScanLinks();
   }, 10000);
 }
 
 /**
+ * Debounced scan links to prevent race conditions
+ * CRITICAL FIX #5: Prevents multiple simultaneous scans
+ */
+function debouncedScanLinks() {
+  // Clear any pending scan timeout
+  if (scanTimeout) {
+    clearTimeout(scanTimeout);
+  }
+  
+  // If a scan is already in progress, mark that we need another scan
+  if (isScanningInProgress) {
+    console.log('[APG] Scan already in progress, marking for re-scan after completion');
+    pendingScan = true;
+    return;
+  }
+  
+  // Schedule scan after 300ms of inactivity (debounce)
+  scanTimeout = setTimeout(() => {
+    scanLinks();
+  }, 300);
+}
+
+/**
  * Scan all links on the page
- * CRITICAL FIX #6: Performance optimization with batching
+ * CRITICAL FIX #5 & #6: Race condition prevention and performance optimization
  */
 function scanLinks() {
+  // Prevent concurrent scans
+  if (isScanningInProgress) {
+    console.log('[APG] Scan already in progress, skipping duplicate scan');
+    pendingScan = true;
+    return;
+  }
+  
+  isScanningInProgress = true;
   const links = document.querySelectorAll('a[href]');
   
   console.log(`[APG] Scanning ${links.length} links on page`);
@@ -214,9 +261,27 @@ function scanLinks() {
     console.log(`[APG] Found ${newLinksFound} new links to analyze`);
     
     // CRITICAL FIX #6: Process links in batches to prevent UI freezing
-    processBatchedLinks(linksToProcess, MAX_BATCH_SIZE, BATCH_DELAY);
+    processBatchedLinks(linksToProcess, MAX_BATCH_SIZE, BATCH_DELAY).then(() => {
+      // CRITICAL FIX #5: Mark scan as complete and check for pending scans
+      isScanningInProgress = false;
+      
+      if (pendingScan) {
+        console.log('[APG] Pending scan detected, starting new scan...');
+        pendingScan = false;
+        debouncedScanLinks();
+      }
+    });
   } else {
     console.log('[APG] No new links found in this scan');
+    
+    // CRITICAL FIX #5: Mark scan as complete
+    isScanningInProgress = false;
+    
+    if (pendingScan) {
+      console.log('[APG] Pending scan detected, starting new scan...');
+      pendingScan = false;
+      debouncedScanLinks();
+    }
   }
 }
 
@@ -439,7 +504,7 @@ async function analyzeAndMarkLink(linkElement, url) {
           max-width: 350px;
         `;
         notice.innerHTML = `
-          <strong>🛡️ Anti-Phishing Guardian</strong><br>
+          <strong>Anti-Phishing Guardian</strong><br>
           Extension was updated. Please refresh this page (F5) to activate protection.
           <button style="margin-top:10px;padding:5px 10px;background:white;color:#ff9800;border:none;border-radius:4px;cursor:pointer;font-weight:bold;" onclick="location.reload()">Refresh Now</button>
         `;
@@ -673,6 +738,59 @@ function showTooltip(event, analysis) {
   actions.appendChild(blacklistBtn);
   body.appendChild(actions);
   
+  // CRITICAL FIX #9: User Feedback Mechanism
+  const feedbackDiv = document.createElement('div');
+  feedbackDiv.className = 'apg-tooltip-feedback';
+  feedbackDiv.style.cssText = `
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+  `;
+  
+  const feedbackTitle = document.createElement('div');
+  feedbackTitle.style.cssText = 'font-size: 11px; color: #666; margin-bottom: 5px;';
+  feedbackTitle.textContent = 'Help improve detection:';
+  
+  const feedbackButtons = document.createElement('div');
+  feedbackButtons.style.cssText = 'display: flex; gap: 5px;';
+  
+  const correctBtn = document.createElement('button');
+  correctBtn.className = 'apg-btn-feedback apg-btn-correct';
+  correctBtn.style.cssText = `
+    flex: 1;
+    padding: 4px 8px;
+    font-size: 11px;
+    background: #28a745;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+  `;
+  correctBtn.textContent = '✓ Correct';
+  correctBtn.title = 'This detection is accurate';
+  
+  const incorrectBtn = document.createElement('button');
+  incorrectBtn.className = 'apg-btn-feedback apg-btn-incorrect';
+  incorrectBtn.style.cssText = `
+    flex: 1;
+    padding: 4px 8px;
+    font-size: 11px;
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+  `;
+  incorrectBtn.textContent = '✗ Incorrect';
+  incorrectBtn.title = 'This is a false positive/negative';
+  
+  feedbackButtons.appendChild(correctBtn);
+  feedbackButtons.appendChild(incorrectBtn);
+  
+  feedbackDiv.appendChild(feedbackTitle);
+  feedbackDiv.appendChild(feedbackButtons);
+  body.appendChild(feedbackDiv);
+  
   // Assemble tooltip
   tooltip.appendChild(header);
   tooltip.appendChild(body);
@@ -696,6 +814,92 @@ function showTooltip(event, analysis) {
     e.stopPropagation();
     addToBlacklist(e.target.dataset.domain);
   });
+  
+  // CRITICAL FIX #9: Feedback button listeners
+  correctBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    submitFeedback(analysis, 'correct');
+  });
+  
+  incorrectBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    submitFeedback(analysis, 'incorrect');
+  });
+}
+
+/**
+ * Submit user feedback about detection accuracy
+ * CRITICAL FIX #9: User Feedback Mechanism
+ */
+async function submitFeedback(analysis, feedbackType) {
+  try {
+    console.log('[APG] Submitting feedback:', feedbackType, 'for', analysis.url);
+    
+    const feedback = {
+      url: analysis.url,
+      domain: analysis.domain,
+      detectedThreatLevel: analysis.threatLevel,
+      feedbackType: feedbackType, // 'correct' or 'incorrect'
+      timestamp: Date.now(),
+      issues: analysis.issues,
+      mlScore: analysis.mlScore,
+      confidence: analysis.confidence
+    };
+    
+    // Send feedback to background script
+    const response = await chrome.runtime.sendMessage({
+      action: 'submitFeedback',
+      feedback: feedback
+    });
+    
+    if (response && response.success) {
+      // Show success message
+      showFeedbackConfirmation(feedbackType);
+      hideTooltip();
+    } else {
+      console.error('[APG] Feedback submission failed:', response?.error);
+      alert('Failed to submit feedback. Please try again.');
+    }
+  } catch (error) {
+    console.error('[APG] Error submitting feedback:', error);
+    alert('Error submitting feedback: ' + error.message);
+  }
+}
+
+/**
+ * Show feedback confirmation message
+ * CRITICAL FIX #9: User feedback confirmation
+ */
+function showFeedbackConfirmation(feedbackType) {
+  const message = feedbackType === 'correct' 
+    ? 'Thank you! Your feedback helps improve detection accuracy.' 
+    : 'Thank you for reporting! We\'ll use this to improve our detection.';
+  
+  const confirmation = document.createElement('div');
+  confirmation.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: #28a745;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    z-index: 999999;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    animation: slideIn 0.3s ease-out;
+  `;
+  confirmation.textContent = `[OK] ${message}`;
+  
+  document.body.appendChild(confirmation);
+  
+  // Auto-remove after 3 seconds
+  setTimeout(() => {
+    confirmation.style.opacity = '0';
+    confirmation.style.transition = 'opacity 0.3s';
+    setTimeout(() => confirmation.remove(), 300);
+  }, 3000);
 }
 
 /**

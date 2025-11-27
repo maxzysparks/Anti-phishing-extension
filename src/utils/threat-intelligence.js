@@ -58,7 +58,7 @@ export class ThreatIntelligence {
   /**
    * Download PhishTank database (FREE, no API key)
    * Updates daily with latest phishing URLs
-   * CRITICAL FIX #7: Now includes rate limiting
+   * CRITICAL FIX #7 & #8: Rate limiting + Retry logic with exponential backoff
    */
   static async updatePhishTankDatabase() {
     return await ErrorHandler.safeAsync(
@@ -82,32 +82,50 @@ export class ThreatIntelligence {
         // Record this API call
         this.recordApiCall();
         
-        // Try PhishTank API with CORS workaround
-        // Note: PhishTank blocks direct CORS requests from extensions
-        // Using a fallback approach with error handling
+        // CRITICAL FIX #8: Enhanced retry logic with exponential backoff
         let response;
-        try {
-          response = await ErrorHandler.retryOperation(
-            async () => {
-              const res = await fetch('https://data.phishtank.com/data/online-valid.json', {
-                method: 'GET',
-                headers: {
-                  'Accept': 'application/json'
-                },
-                mode: 'cors'
-              });
-              
-              if (!res.ok) {
-                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-              }
-              
-              return res;
-            },
-            2, // 2 retries
-            1000 // 1 second base delay
-          );
-        } catch (corsError) {
-          console.warn('[TI] PhishTank CORS blocked, using fallback minimal database');
+        let lastError;
+        const maxRetries = 3;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            console.log(`[TI] Download attempt ${attempt}/${maxRetries}...`);
+            
+            const res = await fetch('https://data.phishtank.com/data/online-valid.json', {
+              method: 'GET',
+              headers: {
+                'Accept': 'application/json'
+              },
+              mode: 'cors',
+              signal: AbortSignal.timeout(30000) // 30 second timeout
+            });
+            
+            if (!res.ok) {
+              throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            }
+            
+            response = res;
+            console.log(`[TI] Download successful on attempt ${attempt}`);
+            break; // Success, exit retry loop
+            
+          } catch (fetchError) {
+            lastError = fetchError;
+            console.warn(`[TI] Attempt ${attempt} failed:`, fetchError.message);
+            
+            // If this was the last attempt, don't wait
+            if (attempt < maxRetries) {
+              // Exponential backoff: 2s, 4s, 8s
+              const backoffDelay = Math.pow(2, attempt) * 1000;
+              console.log(`[TI] Retrying in ${backoffDelay/1000} seconds...`);
+              await new Promise(resolve => setTimeout(resolve, backoffDelay));
+            }
+          }
+        }
+        
+        // If all retries failed, use fallback
+        if (!response) {
+          console.warn('[TI] All download attempts failed, using fallback database');
+          console.warn('[TI] Last error:', lastError?.message);
           
           // FALLBACK: Use a minimal hardcoded list of known phishing patterns
           // This allows the extension to work even without PhishTank access

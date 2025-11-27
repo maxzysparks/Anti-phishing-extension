@@ -170,10 +170,17 @@ export class StorageManager {
 
   /**
    * Cache threat analysis for a URL
-   * CRITICAL FIX #8: Enhanced with automatic cleanup and memory management
+   * CRITICAL FIX #6 & #8: Enhanced with quota monitoring and automatic cleanup
    */
   static async cacheThreat(url, analysis) {
     try {
+      // CRITICAL FIX #6: Check storage quota before writing
+      const quotaCheck = await this.checkStorageQuota();
+      if (!quotaCheck.hasSpace) {
+        console.warn('[Storage] Storage quota exceeded, forcing cleanup...');
+        await this.forceCleanup();
+      }
+
       const result = await chrome.storage.local.get(STORAGE_KEYS.CACHE);
       const cache = result[STORAGE_KEYS.CACHE] || {};
 
@@ -215,6 +222,24 @@ export class StorageManager {
 
       return true;
     } catch (error) {
+      // CRITICAL FIX #6: Handle QUOTA_EXCEEDED_ERR specifically
+      if (error.message && error.message.includes('QUOTA_EXCEEDED')) {
+        console.error('[Storage] QUOTA_EXCEEDED_ERR - forcing emergency cleanup');
+        await this.emergencyCleanup();
+        
+        // Try again after cleanup
+        try {
+          const result = await chrome.storage.local.get(STORAGE_KEYS.CACHE);
+          const cache = result[STORAGE_KEYS.CACHE] || {};
+          cache[url] = { ...analysis, timestamp: Date.now() };
+          await chrome.storage.local.set({ [STORAGE_KEYS.CACHE]: cache });
+          return true;
+        } catch (retryError) {
+          console.error('[Storage] Failed even after emergency cleanup:', retryError);
+          return false;
+        }
+      }
+      
       console.error('Error caching threat:', error);
       return false;
     }
@@ -376,5 +401,183 @@ export class StorageManager {
       console.error('Error resetting stats:', error);
       return false;
     }
+  }
+
+  /**
+   * Check storage quota
+   * CRITICAL FIX #6: Monitor storage usage to prevent QUOTA_EXCEEDED errors
+   */
+  static async checkStorageQuota() {
+    try {
+      if (navigator.storage && navigator.storage.estimate) {
+        const estimate = await navigator.storage.estimate();
+        const usagePercent = (estimate.usage / estimate.quota) * 100;
+        
+        return {
+          usage: estimate.usage,
+          quota: estimate.quota,
+          usagePercent: usagePercent,
+          hasSpace: usagePercent < 90, // Warn at 90%
+          critical: usagePercent > 95 // Critical at 95%
+        };
+      }
+      
+      // Fallback for browsers without storage.estimate
+      return {
+        usage: 0,
+        quota: 0,
+        usagePercent: 0,
+        hasSpace: true,
+        critical: false,
+        unsupported: true
+      };
+    } catch (error) {
+      console.error('[Storage] Error checking quota:', error);
+      return {
+        usage: 0,
+        quota: 0,
+        usagePercent: 0,
+        hasSpace: true,
+        critical: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Force cleanup when approaching quota limit
+   * CRITICAL FIX #6: Proactive cleanup to prevent quota errors
+   */
+  static async forceCleanup() {
+    try {
+      console.log('[Storage] Force cleanup initiated...');
+      
+      // Clean cache
+      const cacheResult = await this.cleanupCache();
+      console.log(`[Storage] Cache cleanup: ${cacheResult.cleaned} entries removed`);
+      
+      // Remove old stats if needed
+      const stats = await this.getStats();
+      if (stats.linksScanned > 100000) {
+        console.log('[Storage] Resetting stats due to high count');
+        await this.resetStats();
+      }
+      
+      // Check quota after cleanup
+      const quotaCheck = await this.checkStorageQuota();
+      console.log(`[Storage] Quota after cleanup: ${quotaCheck.usagePercent.toFixed(2)}%`);
+      
+      return {
+        success: true,
+        quotaAfterCleanup: quotaCheck.usagePercent
+      };
+    } catch (error) {
+      console.error('[Storage] Force cleanup failed:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Emergency cleanup when quota is exceeded
+   * CRITICAL FIX #6: Last resort cleanup
+   */
+  static async emergencyCleanup() {
+    try {
+      console.error('[Storage] EMERGENCY CLEANUP - Clearing all cache!');
+      
+      // Clear entire cache
+      await chrome.storage.local.set({ [STORAGE_KEYS.CACHE]: {} });
+      
+      // Reset stats
+      await this.resetStats();
+      
+      console.log('[Storage] Emergency cleanup complete');
+      
+      return { success: true };
+    } catch (error) {
+      console.error('[Storage] Emergency cleanup failed:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Get storage usage report
+   * CRITICAL FIX #6: Monitoring and reporting
+   */
+  static async getStorageReport() {
+    try {
+      const quotaInfo = await this.checkStorageQuota();
+      const cacheStats = await this.getCacheStats();
+      const stats = await this.getStats();
+      
+      // Get size of each storage key
+      const allData = await chrome.storage.local.get(null);
+      const sizes = {};
+      
+      for (const [key, value] of Object.entries(allData)) {
+        const size = new Blob([JSON.stringify(value)]).size;
+        sizes[key] = {
+          bytes: size,
+          kb: (size / 1024).toFixed(2),
+          mb: (size / 1024 / 1024).toFixed(2)
+        };
+      }
+      
+      return {
+        quota: quotaInfo,
+        cache: cacheStats,
+        stats: stats,
+        sizes: sizes,
+        recommendations: this.getStorageRecommendations(quotaInfo, cacheStats)
+      };
+    } catch (error) {
+      console.error('[Storage] Error generating storage report:', error);
+      return {
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Get storage recommendations
+   * CRITICAL FIX #6: Proactive suggestions
+   */
+  static getStorageRecommendations(quotaInfo, cacheStats) {
+    const recommendations = [];
+    
+    if (quotaInfo.critical) {
+      recommendations.push({
+        severity: 'critical',
+        message: 'Storage critically low! Clear cache immediately.',
+        action: 'clearCache'
+      });
+    } else if (!quotaInfo.hasSpace) {
+      recommendations.push({
+        severity: 'warning',
+        message: 'Storage usage high. Consider clearing cache.',
+        action: 'clearCache'
+      });
+    }
+    
+    if (cacheStats.expired > 50) {
+      recommendations.push({
+        severity: 'info',
+        message: `${cacheStats.expired} expired cache entries can be removed.`,
+        action: 'cleanupCache'
+      });
+    }
+    
+    if (cacheStats.total > 400) {
+      recommendations.push({
+        severity: 'info',
+        message: 'Cache size is large. Regular cleanup recommended.',
+        action: 'cleanupCache'
+      });
+    }
+    
+    return recommendations;
   }
 }

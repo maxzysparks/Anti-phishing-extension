@@ -10,48 +10,94 @@ export class TensorFlowManager {
     this.model = null;
     this.isInitialized = false;
     this.isLoading = false;
+    this.fallbackMode = false;
+    this.initializationAttempts = 0;
+    this.maxInitAttempts = 3;
   }
 
   /**
-   * Initialize TensorFlow.js backend
+   * Initialize TensorFlow.js backend with comprehensive error recovery
+   * CRITICAL FIX #1: Enhanced fallback mechanisms
    */
   async initialize() {
     if (this.isInitialized) {
-      return { success: true, message: 'Already initialized' };
+      return { success: true, message: 'Already initialized', fallbackMode: this.fallbackMode };
     }
 
     if (this.isLoading) {
       return { success: false, message: 'Already loading' };
     }
 
+    this.initializationAttempts++;
+    
+    if (this.initializationAttempts > this.maxInitAttempts) {
+      console.warn('[TF] Max initialization attempts reached, entering fallback mode');
+      this.fallbackMode = true;
+      this.isInitialized = true;
+      return { 
+        success: true, 
+        message: 'Using fallback mode (heuristic-only detection)',
+        fallbackMode: true 
+      };
+    }
+
     try {
       this.isLoading = true;
-      console.log('[TF] Initializing TensorFlow.js...');
+      console.log(`[TF] Initializing TensorFlow.js (attempt ${this.initializationAttempts}/${this.maxInitAttempts})...`);
 
-      // Set backend (WebGL for better performance)
-      await tf.setBackend('webgl');
-      await tf.ready();
-
-      console.log('[TF] Backend:', tf.getBackend());
-      console.log('[TF] TensorFlow.js initialized successfully');
-
-      this.isInitialized = true;
-      this.isLoading = false;
-
-      return { success: true, message: 'Initialized successfully' };
+      // Try WebGL backend first (best performance)
+      try {
+        await tf.setBackend('webgl');
+        await tf.ready();
+        console.log('[TF] Backend: WebGL (optimal performance)');
+        this.isInitialized = true;
+        this.isLoading = false;
+        this.fallbackMode = false;
+        return { success: true, message: 'Initialized with WebGL backend', backend: 'webgl' };
+      } catch (webglError) {
+        console.warn('[TF] WebGL backend failed, trying CPU...', webglError.message);
+        
+        // Fallback to CPU backend
+        try {
+          await tf.setBackend('cpu');
+          await tf.ready();
+          console.log('[TF] Backend: CPU (reduced performance)');
+          this.isInitialized = true;
+          this.isLoading = false;
+          this.fallbackMode = false;
+          return { success: true, message: 'Initialized with CPU backend', backend: 'cpu' };
+        } catch (cpuError) {
+          console.warn('[TF] CPU backend failed, trying WASM...', cpuError.message);
+          
+          // Final fallback to WASM
+          try {
+            await tf.setBackend('wasm');
+            await tf.ready();
+            console.log('[TF] Backend: WASM (basic support)');
+            this.isInitialized = true;
+            this.isLoading = false;
+            this.fallbackMode = false;
+            return { success: true, message: 'Initialized with WASM backend', backend: 'wasm' };
+          } catch (wasmError) {
+            throw new Error('All TensorFlow backends failed');
+          }
+        }
+      }
     } catch (error) {
-      console.error('[TF] Initialization error:', error);
+      console.error('[TF] All initialization attempts failed:', error);
       this.isLoading = false;
       
-      // Fallback to CPU backend
-      try {
-        await tf.setBackend('cpu');
-        await tf.ready();
-        this.isInitialized = true;
-        return { success: true, message: 'Initialized with CPU backend' };
-      } catch (fallbackError) {
-        return { success: false, message: 'Failed to initialize', error: fallbackError.message };
-      }
+      // Enter fallback mode - use heuristic detection only
+      console.warn('[TF] Entering fallback mode - ML features disabled');
+      this.fallbackMode = true;
+      this.isInitialized = true; // Mark as initialized to prevent retry loops
+      
+      return { 
+        success: true, 
+        message: 'Using fallback mode (heuristic-only detection)', 
+        error: error.message,
+        fallbackMode: true 
+      };
     }
   }
 
@@ -167,25 +213,50 @@ export class TensorFlowManager {
 
   /**
    * Predict phishing probability using the model
+   * CRITICAL FIX #1: Enhanced error handling with fallback
    */
   async predict(urlAnalysis) {
+    // Check if in fallback mode
+    if (this.fallbackMode) {
+      console.log('[TF] Using fallback heuristic prediction (ML disabled)');
+      return this.heuristicPredict(urlAnalysis);
+    }
+
     if (!this.isInitialized) {
-      await this.initialize();
+      const initResult = await this.initialize();
+      if (initResult.fallbackMode) {
+        return this.heuristicPredict(urlAnalysis);
+      }
     }
 
     if (!this.model) {
-      await this.createPhishingModel();
+      const modelResult = await this.createPhishingModel();
+      if (!modelResult.success) {
+        console.warn('[TF] Model creation failed, using heuristic fallback');
+        return this.heuristicPredict(urlAnalysis);
+      }
     }
 
     try {
       // Extract features
       const features = this.extractMLFeatures(urlAnalysis);
       
-      // Create tensor
-      const inputTensor = tf.tensor2d([features], [1, 20]);
+      // Create tensor with error handling
+      let inputTensor;
+      try {
+        inputTensor = tf.tensor2d([features], [1, 20]);
+      } catch (tensorError) {
+        console.error('[TF] Tensor creation failed:', tensorError);
+        return this.heuristicPredict(urlAnalysis);
+      }
       
-      // Make prediction
-      const prediction = this.model.predict(inputTensor);
+      // Make prediction with timeout
+      const predictionPromise = this.model.predict(inputTensor);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Prediction timeout')), 5000)
+      );
+      
+      const prediction = await Promise.race([predictionPromise, timeoutPromise]);
       const probabilities = await prediction.data();
       
       // Clean up tensors
@@ -198,19 +269,81 @@ export class TensorFlowManager {
         suspicious: probabilities[1],
         dangerous: probabilities[2],
         prediction: this.getPredictionClass(probabilities),
-        confidence: Math.max(...probabilities)
+        confidence: Math.max(...probabilities),
+        mlEnabled: true
       };
 
-      console.log('[TF] Prediction:', result);
+      console.log('[TF] ML Prediction:', result);
       return result;
     } catch (error) {
-      console.error('[TF] Prediction error:', error);
+      console.error('[TF] Prediction error, falling back to heuristics:', error);
+      
+      // Don't fail completely - use heuristic fallback
+      return this.heuristicPredict(urlAnalysis);
+    }
+  }
+
+  /**
+   * Heuristic-based prediction fallback (no ML required)
+   * CRITICAL FIX #1: Ensures extension works even if ML fails
+   */
+  heuristicPredict(urlAnalysis) {
+    try {
+      // Calculate threat probability based on heuristic analysis
+      const issueCount = urlAnalysis.issues?.length || 0;
+      const highSeverity = urlAnalysis.issues?.filter(i => i.severity === 'high').length || 0;
+      const mediumSeverity = urlAnalysis.issues?.filter(i => i.severity === 'medium').length || 0;
+      
+      // Score calculation
+      const score = (highSeverity * 3) + (mediumSeverity * 2) + issueCount;
+      
+      let safe, suspicious, dangerous;
+      
+      if (score >= 7 || highSeverity >= 3) {
+        // High threat
+        dangerous = 0.8;
+        suspicious = 0.15;
+        safe = 0.05;
+      } else if (score >= 4 || highSeverity >= 2) {
+        // Medium threat
+        dangerous = 0.3;
+        suspicious = 0.6;
+        safe = 0.1;
+      } else if (score >= 2 || highSeverity >= 1) {
+        // Low threat
+        dangerous = 0.1;
+        suspicious = 0.5;
+        safe = 0.4;
+      } else {
+        // Minimal threat
+        dangerous = 0.05;
+        suspicious = 0.15;
+        safe = 0.8;
+      }
+      
+      const probabilities = [safe, suspicious, dangerous];
+      
+      return {
+        safe,
+        suspicious,
+        dangerous,
+        prediction: this.getPredictionClass(probabilities),
+        confidence: Math.max(...probabilities),
+        mlEnabled: false,
+        fallbackMode: true,
+        heuristicScore: score
+      };
+    } catch (error) {
+      console.error('[TF] Even heuristic prediction failed:', error);
+      // Ultimate fallback - neutral prediction
       return {
         safe: 0.33,
-        suspicious: 0.33,
-        dangerous: 0.34,
+        suspicious: 0.34,
+        dangerous: 0.33,
         prediction: 'unknown',
-        confidence: 0,
+        confidence: 0.33,
+        mlEnabled: false,
+        fallbackMode: true,
         error: error.message
       };
     }

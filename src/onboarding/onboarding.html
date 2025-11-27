@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to Anti-Phishing Guardian</title>
+  <link rel="stylesheet" href="onboarding.css">
+</head>
+<body>
+  <div class="onboarding-container">
+    <!-- Step 1: Welcome -->
+    <div class="onboarding-step active" id="step-1">
+      <div class="step-content">
+        <div class="icon-large">&#128737;</div>
+        <h1>Welcome to Anti-Phishing Guardian!</h1>
+        <p class="subtitle">Your intelligent protection against phishing attacks</p>
+        <p>We'll help you get started in just a few steps.</p>
+        <button class="btn-primary" onclick="nextStep()">Get Started</button>
+        <button class="btn-text" onclick="skipOnboarding()">Skip Tutorial</button>
+      </div>
+    </div>
+
+    <!-- Step 2: How It Works -->
+    <div class="onboarding-step" id="step-2">
+      <div class="step-content">
+        <div class="icon-large">&#128269;</div>
+        <h2>How It Works</h2>
+        <div class="feature-list">
+          <div class="feature-item">
+            <span class="feature-icon">⚡</span>
+            <div>
+              <h3>Real-Time Scanning</h3>
+              <p>Automatically scans all links in your emails</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🤖</span>
+            <div>
+              <h3>AI-Powered Detection</h3>
+              <p>Uses machine learning to identify threats</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🎯</span>
+            <div>
+              <h3>Visual Indicators</h3>
+              <p>Color-coded warnings on suspicious links</p>
+            </div>
+          </div>
+        </div>
+        <div class="button-group">
+          <button class="btn-secondary" onclick="prevStep()">Back</button>
+          <button class="btn-primary" onclick="nextStep()">Continue</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3: Understanding Indicators -->
+    <div class="onboarding-step" id="step-3">
+      <div class="step-content">
+        <h2>Understanding Link Indicators</h2>
+        <div class="indicator-examples">
+          <div class="indicator-example safe">
+            <span class="example-icon">✓</span>
+            <div>
+              <h3>Safe Link</h3>
+              <p>Green indicator - Link appears legitimate</p>
+            </div>
+          </div>
+          <div class="indicator-example suspicious">
+            <span class="example-icon">⚠</span>
+            <div>
+              <h3>Suspicious Link</h3>
+              <p>Yellow indicator - Exercise caution</p>
+            </div>
+          </div>
+          <div class="indicator-example dangerous">
+            <span class="example-icon">✗</span>
+            <div>
+              <h3>Dangerous Link</h3>
+              <p>Red indicator - Known phishing threat</p>
+            </div>
+          </div>
+        </div>
+        <p class="tip">💡 Hover over any link to see detailed analysis</p>
+        <div class="button-group">
+          <button class="btn-secondary" onclick="prevStep()">Back</button>
+          <button class="btn-primary" onclick="nextStep()">Continue</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 4: Key Features -->
+    <div class="onboarding-step" id="step-4">
+      <div class="step-content">
+        <h2>Key Features</h2>
+        <div class="feature-grid">
+          <div class="feature-card">
+            <div class="card-icon">📋</div>
+            <h3>Whitelist/Blacklist</h3>
+            <p>Manage trusted and blocked domains</p>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">📊</div>
+            <h3>Statistics</h3>
+            <p>Track threats blocked and links scanned</p>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">🔄</div>
+            <h3>Auto-Updates</h3>
+            <p>Threat database updates daily</p>
+          </div>
+          <div class="feature-card">
+            <div class="card-icon">💬</div>
+            <h3>Feedback</h3>
+            <p>Report false positives to improve accuracy</p>
+          </div>
+        </div>
+        <div class="button-group">
+          <button class="btn-secondary" onclick="prevStep()">Back</button>
+          <button class="btn-primary" onclick="nextStep()">Continue</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 5: Setup Complete -->
+    <div class="onboarding-step" id="step-5">
+      <div class="step-content">
+        <div class="icon-large">&#9989;</div>
+        <h2>You're All Set!</h2>
+        <p>Anti-Phishing Guardian is now protecting your emails.</p>
+        
+        <div class="setup-status">
+          <div class="status-item">
+            <span class="status-icon" id="db-status">⏳</span>
+            <span id="db-text">Downloading threat database...</span>
+          </div>
+          <div class="status-item">
+            <span class="status-icon">✓</span>
+            <span>Real-time protection active</span>
+          </div>
+          <div class="status-item">
+            <span class="status-icon">✓</span>
+            <span>AI detection enabled</span>
+          </div>
+        </div>
+
+        <div class="quick-tips">
+          <h3>Quick Tips:</h3>
+          <ul>
+            <li>Click the extension icon to view statistics</li>
+            <li>Hover over links to see threat analysis</li>
+            <li>Use feedback buttons to improve detection</li>
+            <li>Check settings to customize protection level</li>
+          </ul>
+        </div>
+
+        <button class="btn-primary btn-large" onclick="finishOnboarding()">Start Protecting</button>
+      </div>
+    </div>
+
+    <!-- Progress Indicator -->
+    <div class="progress-indicator">
+      <div class="progress-dot active" data-step="1"></div>
+      <div class="progress-dot" data-step="2"></div>
+      <div class="progress-dot" data-step="3"></div>
+      <div class="progress-dot" data-step="4"></div>
+      <div class="progress-dot" data-step="5"></div>
+    </div>
+  </div>
+
+  <script src="onboarding.js"></script>
+</body>
+</html>

@@ -9,6 +9,7 @@ import { THREAT_LEVELS, PHISHING_KEYWORDS, SPAM_INDICATORS, LEGITIMATE_DOMAINS, 
 import { p2pThreatNetwork } from '../network/p2p-threat-network.js';
 import { GraphNeuralNetwork } from '../ml/graph-neural-network.js';
 import { distributedThreatDB } from '../network/distributed-threat-db.js';
+import { performanceMonitor } from './performance-monitor.js';
 
 /**
  * Main phishing detection engine
@@ -19,6 +20,9 @@ export class PhishingDetector {
    * CRITICAL FIX #5: Offline fallback support
    */
   static async analyzeLink(url, context) {
+    // CRITICAL FIX #12: Track performance
+    const startTime = performance.now();
+    
     try {
       // CRITICAL FIX #5: Check if offline
       const isOffline = !navigator.onLine;
@@ -30,6 +34,8 @@ export class PhishingDetector {
       // Check cache first with age validation
       const cached = await StorageManager.getCachedThreat(url);
       if (cached && this.isCacheValid(cached)) {
+        // CRITICAL FIX #12: Record cache hit
+        performanceMonitor.recordCacheHit();
         // CRITICAL: Re-verify cached dangerous/suspicious URLs periodically
         if (cached.threatLevel === THREAT_LEVELS.DANGEROUS || 
             cached.threatLevel === THREAT_LEVELS.SUSPICIOUS) {
@@ -40,7 +46,10 @@ export class PhishingDetector {
           if (cacheAge > maxAge && !isOffline) {
             console.log('[APG] Re-analyzing cached threat due to age:', url);
             // Don't return cached, continue to full analysis
+            performanceMonitor.recordCacheMiss();
           } else {
+            const scanTime = performance.now() - startTime;
+            performanceMonitor.recordScanTime(scanTime);
             return cached;
           }
         } else {
@@ -159,9 +168,14 @@ export class PhishingDetector {
       // Perform local analysis (works offline)
       const analysis = analyzeURL(url);
       
+      // Record cache miss
+      performanceMonitor.recordCacheMiss();
+      
       // ENHANCED: ML pattern detection with null check
       const mlAnalysis = await PatternDetector.analyze(url);
       if (mlAnalysis && mlAnalysis.score > 0) {
+        // CRITICAL FIX #12: Record ML inference
+        performanceMonitor.recordMLInference();
         analysis.mlScore = mlAnalysis.score;
         analysis.mlConfidence = mlAnalysis.confidence;
         analysis.mlClassification = mlAnalysis.classification;
@@ -299,9 +313,15 @@ export class PhishingDetector {
       const issueTypes = analysis.issues.map(issue => issue.type);
       await AnalyticsManager.recordThreat(analysis.threatLevel, issueTypes);
 
+      // CRITICAL FIX #12: Record scan time
+      const scanTime = performance.now() - startTime;
+      performanceMonitor.recordScanTime(scanTime);
+
       return analysis;
     } catch (error) {
       console.error('Error analyzing link:', error);
+      // CRITICAL FIX #12: Record error
+      performanceMonitor.recordError();
       return {
         url,
         threatLevel: THREAT_LEVELS.UNKNOWN,
