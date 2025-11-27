@@ -190,54 +190,71 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     // Schedule automatic updates for future
     ThreatIntelligence.scheduleAutomaticUpdates();
     
-    // AUTOMATIC ML TRAINING: Train model in background on first install
-    console.log('[ML Training] Starting automatic model training...');
-    setTimeout(async () => {
-      try {
-        // Initialize training data
-        const dataInit = await TrainingDataCollector.initializeTrainingData();
-        if (dataInit.success) {
-          console.log(`[ML Training] Training data ready: ${dataInit.count} samples`);
-          
-          // Train model (lightweight: 30 epochs, fast training)
-          console.log('[ML Training] Training neural network...');
-          const trainingResult = await ModelTrainer.trainModel({
-            epochs: 30,
-            batchSize: 16,
-            learningRate: 0.001
-          });
-          
-          if (trainingResult.success) {
-            const acc = (trainingResult.evaluation.finalAccuracy * 100).toFixed(1);
-            console.log(`[ML Training] ✓ Model trained successfully! Accuracy: ${acc}%`);
+    // AUTOMATIC ML TRAINING: Train model in background (non-blocking, no delay)
+    // CRITICAL FIX #13: Move training to background to reduce initialization time
+    console.log('[ML Training] Scheduling background model training...');
+    
+    // Use chrome.alarms for truly background execution (doesn't block initialization)
+    chrome.alarms.create('initialModelTraining', {
+      delayInMinutes: 0.1 // Start in 6 seconds (non-blocking)
+    });
+    
+    // Add one-time alarm listener for training
+    const trainingListener = async (alarm) => {
+      if (alarm.name === 'initialModelTraining') {
+        console.log('[ML Training] Starting background model training...');
+        
+        try {
+          // Initialize training data
+          const dataInit = await TrainingDataCollector.initializeTrainingData();
+          if (dataInit.success) {
+            console.log(`[ML Training] Training data ready: ${dataInit.count} samples`);
             
-            // Save training metadata
-            await ModelTrainer.saveTrainingMetadata(trainingResult);
+            // Train model (lightweight: 30 epochs, fast training)
+            console.log('[ML Training] Training neural network in background...');
+            const trainingResult = await ModelTrainer.trainModel({
+              epochs: 30,
+              batchSize: 16,
+              learningRate: 0.001
+            });
             
-            // Show notification to user
-            try {
-              await chrome.notifications.create('ml-trained', {
-                type: 'basic',
-                iconUrl: '/icons/icon48.png',
-                title: 'AI Model Trained',
-                message: `Neural network ready! Detection accuracy: ${acc}%`,
-                priority: 1
-              });
+            if (trainingResult.success) {
+              const acc = (trainingResult.evaluation.finalAccuracy * 100).toFixed(1);
+              console.log(`[ML Training] ✓ Model trained successfully! Accuracy: ${acc}%`);
               
-              setTimeout(() => chrome.notifications.clear('ml-trained'), 5000);
-            } catch (notifError) {
-              console.warn('[ML Training] Could not show training notification:', notifError);
+              // Save training metadata
+              await ModelTrainer.saveTrainingMetadata(trainingResult);
+              
+              // Show notification to user
+              try {
+                await chrome.notifications.create('ml-trained', {
+                  type: 'basic',
+                  iconUrl: '/icons/icon48.png',
+                  title: 'AI Model Trained',
+                  message: `Neural network ready! Detection accuracy: ${acc}%`,
+                  priority: 1
+                });
+                
+                setTimeout(() => chrome.notifications.clear('ml-trained'), 5000);
+              } catch (notifError) {
+                console.warn('[ML Training] Could not show training notification:', notifError);
+              }
+            } else {
+              console.warn('[ML Training] Training failed:', trainingResult.error);
+              console.log('[ML Training] Falling back to heuristic detection');
             }
-          } else {
-            console.warn('[ML Training] Training failed:', trainingResult.error);
-            console.log('[ML Training] Falling back to heuristic detection');
           }
+        } catch (trainingError) {
+          console.warn('[ML Training] Training error (non-critical):', trainingError.message);
+          console.log('[ML Training] Extension will use heuristic detection');
         }
-      } catch (trainingError) {
-        console.warn('[ML Training] Training error (non-critical):', trainingError.message);
-        console.log('[ML Training] Extension will use heuristic detection');
+        
+        // Remove this one-time listener
+        chrome.alarms.onAlarm.removeListener(trainingListener);
       }
-    }, 5000); // Start training 5 seconds after install (let other setup complete first)
+    };
+    
+    chrome.alarms.onAlarm.addListener(trainingListener);
   }
   
   // On update, check if database needs refresh

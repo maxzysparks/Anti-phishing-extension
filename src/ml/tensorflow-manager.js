@@ -5,6 +5,19 @@
 
 import * as tf from '@tensorflow/tfjs';
 
+// CRITICAL FIX #14: Suppress TensorFlow warnings
+// Suppress console warnings from TensorFlow (orthogonal initializer warnings)
+const originalWarn = console.warn;
+console.warn = function(...args) {
+  const message = args.join(' ');
+  // Filter out TensorFlow orthogonal initializer warnings
+  if (message.includes('Orthogonal initializer') || 
+      message.includes('Slowness may result')) {
+    return; // Suppress these warnings
+  }
+  originalWarn.apply(console, args);
+};
+
 export class TensorFlowManager {
   constructor() {
     this.model = null;

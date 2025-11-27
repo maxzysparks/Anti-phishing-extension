@@ -87,39 +87,68 @@ export class ThreatIntelligence {
         let lastError;
         const maxRetries = 3;
         
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          try {
-            console.log(`[TI] Download attempt ${attempt}/${maxRetries}...`);
-            
-            const res = await fetch('https://data.phishtank.com/data/online-valid.json', {
-              method: 'GET',
-              headers: {
-                'Accept': 'application/json'
-              },
-              mode: 'cors',
-              signal: AbortSignal.timeout(30000) // 30 second timeout
-            });
-            
-            if (!res.ok) {
-              throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-            }
-            
-            response = res;
-            console.log(`[TI] Download successful on attempt ${attempt}`);
-            break; // Success, exit retry loop
-            
-          } catch (fetchError) {
-            lastError = fetchError;
-            console.warn(`[TI] Attempt ${attempt} failed:`, fetchError.message);
-            
-            // If this was the last attempt, don't wait
-            if (attempt < maxRetries) {
-              // Exponential backoff: 2s, 4s, 8s
-              const backoffDelay = Math.pow(2, attempt) * 1000;
-              console.log(`[TI] Retrying in ${backoffDelay/1000} seconds...`);
-              await new Promise(resolve => setTimeout(resolve, backoffDelay));
+        // CRITICAL FIX #15: Try multiple methods to bypass CORS
+        const downloadMethods = [
+          // Method 1: Try direct access (works if CORS is enabled)
+          {
+            name: 'Direct',
+            url: 'https://data.phishtank.com/data/online-valid.json'
+          },
+          // Method 2: Use CORS proxy (allorigins.win - free, no API key)
+          {
+            name: 'CORS Proxy (AllOrigins)',
+            url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://data.phishtank.com/data/online-valid.json')
+          },
+          // Method 3: Use alternative CORS proxy (corsproxy.io)
+          {
+            name: 'CORS Proxy (CorsProxy)',
+            url: 'https://corsproxy.io/?' + encodeURIComponent('https://data.phishtank.com/data/online-valid.json')
+          }
+        ];
+        
+        for (const method of downloadMethods) {
+          console.log(`[TI] Trying ${method.name}...`);
+          
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              console.log(`[TI] ${method.name} attempt ${attempt}/${maxRetries}...`);
+              
+              const res = await fetch(method.url, {
+                method: 'GET',
+                headers: {
+                  'Accept': 'application/json'
+                },
+                signal: AbortSignal.timeout(30000) // 30 second timeout
+              });
+              
+              if (!res.ok) {
+                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+              }
+              
+              response = res;
+              console.log(`[TI] ✓ Download successful using ${method.name}!`);
+              break; // Success, exit retry loop
+              
+            } catch (fetchError) {
+              lastError = fetchError;
+              console.warn(`[TI] ${method.name} attempt ${attempt} failed:`, fetchError.message);
+              
+              // If this was the last attempt for this method, don't wait
+              if (attempt < maxRetries) {
+                // Exponential backoff: 2s, 4s
+                const backoffDelay = Math.pow(2, attempt) * 1000;
+                console.log(`[TI] Retrying in ${backoffDelay/1000} seconds...`);
+                await new Promise(resolve => setTimeout(resolve, backoffDelay));
+              }
             }
           }
+          
+          // If we got a response, break out of methods loop
+          if (response) {
+            break;
+          }
+          
+          console.log(`[TI] ${method.name} failed, trying next method...`);
         }
         
         // If all retries failed, use fallback
