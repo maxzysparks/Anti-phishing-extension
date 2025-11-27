@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "description": "Browser extension to detect phishing and malicious links in Gmail and Outlook",
   "scripts": {
-    "build": "webpack --mode production",
+    "build": "webpack --mode production && node build-chrome.js",
+    "build:chrome": "webpack --mode production && node build-chrome.js",
+    "build:safari": "webpack --mode production && node build-safari.js",
+    "build:all": "npm run build:chrome && npm run build:safari",
     "dev": "webpack --mode development --watch",
     "test": "jest",
     "test:watch": "jest --watch",
