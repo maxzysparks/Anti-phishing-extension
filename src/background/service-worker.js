@@ -1,10 +1,12 @@
 import { PhishingDetector } from '../utils/phishing-detector.js';
 import { StorageManager } from '../utils/storage.js';
 import { ThreatIntelligence } from '../utils/threat-intelligence.js';
+import { SupabaseThreatIntelligence } from '../utils/supabase-threat-intelligence.js';
 import { tfManager } from '../ml/tensorflow-manager.js';
 import { ModelTrainer } from '../ml/model-trainer.js';
 import { TrainingDataCollector } from '../ml/training-data-collector.js';
 import { PatternDetector } from '../ml/pattern-detector.js';
+import { AdaptiveLearningEngine } from '../ml/adaptive-learning-engine.js';
 import { p2pThreatNetwork } from '../network/p2p-threat-network.js';
 import { GraphNeuralNetwork } from '../ml/graph-neural-network.js';
 import { distributedThreatDB } from '../network/distributed-threat-db.js';
@@ -76,16 +78,26 @@ Promise.allSettled([
   PatternDetector.initializeZeroDay().then(() => console.log('[ML] ✓ Zero-Day ready')),
   PatternDetector.initializeLSTM().then(() => console.log('[ML] ✓ LSTM ready')),
   
-  // Network Components (parallel group 2)
+  // Adaptive Learning Engine (parallel group 2) - SENTIENT AI
+  AdaptiveLearningEngine.initialize()
+    .then(r => r.success && console.log('[Adaptive Learning] 🤖 Sentient engine ready'))
+    .catch(err => console.warn('[Adaptive Learning] Init failed (non-critical):', err.message)),
+  
+  // Threat Intelligence (parallel group 3) - Supabase + PhishTank
+  SupabaseThreatIntelligence.initialize()
+    .then(success => success && console.log('[Supabase] ✓ Connected'))
+    .catch(err => console.warn('[Supabase] Connection failed (non-critical):', err.message)),
+  
+  // Network Components (parallel group 4)
   p2pThreatNetwork.initialize().then(r => r.success && console.log('[Network] ✓ P2P ready')),
   distributedThreatDB.initialize().then(r => r.success && console.log('[Network] ✓ Distributed DB ready')),
   new GraphNeuralNetwork().initialize().then(r => r.success && console.log('[Network] ✓ GNN ready')),
   
-  // Production Components (parallel group 3)
+  // Production Components (parallel group 5)
   new TelemetrySystem().initialize().then(r => r.success && console.log('[Production] ✓ Telemetry ready')),
   new ProductionManager().initialize().then(r => r.success && console.log('[Production] ✓ Manager ready')),
   
-  // Analytics Components (parallel group 4)
+  // Analytics Components (parallel group 6)
   advancedAnalytics.initialize().then(r => r.success && console.log('[Analytics] ✓ Advanced ready')),
   dbscanClustering.initialize().then(r => r.success && console.log('[Analytics] ✓ DBSCAN ready')),
   new ThreatVisualizer().initialize().then(r => r.success && console.log('[Analytics] ✓ Visualizer ready'))
@@ -926,6 +938,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
         attemptRecovery();
       }
     });
+  } else if (alarm.name === 'weeklyRetraining') {
+    // SENTIENT AI: Automatic weekly retraining
+    console.log('[Adaptive Learning] Weekly retraining alarm triggered');
+    AdaptiveLearningEngine.performAutomaticRetraining();
   } else if (alarm.name === 'cacheCleanup') {
     // CRITICAL FIX #2: Periodic cache cleanup to prevent memory leaks
     console.log('[Service Worker] Running periodic cache cleanup...');

@@ -313,4 +313,163 @@ export class ModelTrainer {
       return { trained: false, error: error.message };
     }
   }
+  
+  /**
+   * Retrain model with user feedback
+   * SENTIENT AI: Continuous learning from user corrections
+   */
+  static async retrainWithFeedback(feedbackData) {
+    console.log('[Trainer] Starting retraining with feedback...');
+    console.log(`[Trainer] Feedback samples: ${feedbackData.length}`);
+    
+    try {
+      // Step 1: Initialize TensorFlow
+      await tfManager.initialize();
+      
+      // Step 2: Load existing model
+      let modelResult = await tfManager.loadModel();
+      if (!modelResult.success) {
+        console.warn('[Trainer] No existing model, creating new one...');
+        modelResult = await tfManager.createPhishingModel();
+        if (!modelResult.success) {
+          throw new Error('Failed to create model');
+        }
+      }
+      
+      // Step 3: Prepare feedback data for training
+      const { features, labels, weights } = this.prepareFeedbackData(feedbackData);
+      console.log(`[Trainer] Prepared ${features.length} feedback samples`);
+      
+      // Step 4: Retrain with feedback (fewer epochs, focused learning)
+      console.log('[Trainer] Retraining model with user feedback...');
+      const history = await this.performFeedbackTraining(
+        features,
+        labels,
+        weights,
+        {
+          epochs: 20, // Fewer epochs for incremental learning
+          batchSize: 16,
+          learningRate: 0.0005 // Lower learning rate to preserve existing knowledge
+        }
+      );
+      
+      // Step 5: Save retrained model
+      console.log('[Trainer] Saving retrained model...');
+      await tfManager.saveModel();
+      
+      // Step 6: Evaluate retraining
+      const evaluation = this.evaluateTraining(history);
+      
+      console.log('[Trainer] ✓ Retraining completed successfully');
+      console.log(`[Trainer] New accuracy: ${(evaluation.finalAccuracy * 100).toFixed(2)}%`);
+      
+      // Step 7: Update metadata
+      await this.saveTrainingMetadata({
+        evaluation: {
+          ...evaluation,
+          retrainedAt: Date.now(),
+          feedbackSamples: feedbackData.length
+        }
+      });
+      
+      return {
+        success: true,
+        accuracy: evaluation.finalAccuracy,
+        history: history,
+        evaluation: evaluation
+      };
+      
+    } catch (error) {
+      console.error('[Trainer] Retraining failed:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+  
+  /**
+   * Prepare feedback data for retraining
+   */
+  static prepareFeedbackData(feedbackData) {
+    const features = [];
+    const labels = [];
+    const weights = [];
+    
+    feedbackData.forEach(sample => {
+      // Extract features from URL
+      const featureVector = tfManager.extractMLFeatures({
+        features: sample.features || [],
+        baseScore: 0,
+        patternScore: 0,
+        contextScore: 0
+      });
+      
+      // Convert label to one-hot encoding
+      // label: 0 = safe, 1 = phishing
+      const labelEncoded = sample.label === 1 ? [0, 1] : [1, 0];
+      
+      features.push(featureVector);
+      labels.push(labelEncoded);
+      
+      // Use sample weight (corrections get more weight)
+      weights.push(sample.weight || 1.0);
+    });
+    
+    return { features, labels, weights };
+  }
+  
+  /**
+   * Perform feedback-based training
+   */
+  static async performFeedbackTraining(features, labels, weights, options) {
+    const { epochs, batchSize, learningRate } = options;
+    
+    // Create tensors
+    const xs = tf.tensor2d(features);
+    const ys = tf.tensor2d(labels);
+    const sampleWeights = tf.tensor1d(weights);
+    
+    // Configure optimizer with lower learning rate
+    tfManager.model.compile({
+      optimizer: tf.train.adam(learningRate),
+      loss: 'categoricalCrossentropy',
+      metrics: ['accuracy']
+    });
+    
+    // Training history
+    const history = {
+      loss: [],
+      accuracy: [],
+      valLoss: [],
+      valAccuracy: []
+    };
+    
+    // Train with sample weights
+    await tfManager.model.fit(xs, ys, {
+      epochs: epochs,
+      batchSize: batchSize,
+      sampleWeight: sampleWeights,
+      shuffle: true,
+      callbacks: {
+        onEpochEnd: (epoch, logs) => {
+          history.loss.push(logs.loss);
+          history.accuracy.push(logs.acc);
+          
+          // Log progress every 5 epochs
+          if ((epoch + 1) % 5 === 0) {
+            console.log(`[Trainer] Retraining Epoch ${epoch + 1}/${epochs}:`);
+            console.log(`  Loss: ${logs.loss.toFixed(4)}, Acc: ${(logs.acc * 100).toFixed(2)}%`);
+          }
+        }
+      }
+    });
+    
+    // Clean up tensors
+    xs.dispose();
+    ys.dispose();
+    sampleWeights.dispose();
+    
+    return history;
+  }
 }
